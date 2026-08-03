@@ -1,0 +1,32 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2a76a8"/>
+      <stop offset="1" stop-color="#123c5c"/>
+    </linearGradient>
+    <linearGradient id="doc" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef4f9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background: rounded square (safe for maskable icon - content stays within inner ~80%) -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- document card -->
+  <g transform="translate(150,96)">
+    <path d="M0 16 C0 7.163 7.163 0 16 0 L150 0 L212 62 L212 304 C212 312.837 204.837 320 196 320 L16 320 C7.163 320 0 312.837 0 304 Z" fill="url(#doc)"/>
+    <path d="M150 0 L212 62 L166 62 C156.611 62 150 55.389 150 46 Z" fill="#d3e3ee"/>
+
+    <!-- text lines -->
+    <rect x="34" y="118" width="144" height="14" rx="7" fill="#a9c3d6"/>
+    <rect x="34" y="150" width="120" height="14" rx="7" fill="#a9c3d6"/>
+    <rect x="34" y="182" width="144" height="14" rx="7" fill="#a9c3d6"/>
+    <rect x="34" y="214" width="90" height="14" rx="7" fill="#a9c3d6"/>
+  </g>
+
+  <!-- seal / check badge -->
+  <circle cx="358" cy="358" r="82" fill="#ffb020"/>
+  <circle cx="358" cy="358" r="82" fill="none" stroke="#ffffff" stroke-width="8"/>
+  <path d="M322 358 L346 382 L396 328" fill="none" stroke="#ffffff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

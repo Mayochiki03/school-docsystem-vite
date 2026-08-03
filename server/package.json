@@ -1,0 +1,18 @@
+{
+  "name": "school-docsystem-server",
+  "version": "2.0.0",
+  "description": "ระบบแจ้งหนังสือราชการออนไลน์สำหรับโรงเรียน (เฟส 9 — Vite/React + SQLite)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "deploy": "xcopy . \"\\\\192.168.3.12\\c$\\MyDoc\" /E /Y /I /Exclude:exclude-list.txt"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "csv-parse": "^7.0.1",
+    "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
+    "nodemailer": "^9.0.3",
+    "web-push": "^3.6.7"
+  }
+}

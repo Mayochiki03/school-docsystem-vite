@@ -1,0 +1,244 @@
+[
+    {
+        "active": true,
+        "name": "หนังสือเข้าจากภายนอก",
+        "category": "incoming",
+        "recipientMode": "single",
+        "requiresScan": true,
+        "formSchema": [
+            {
+                "key": "fromOrg",
+                "label": "จากหน่วยงาน/บุคคล",
+                "type": "text",
+                "required": true
+            },
+            {
+                "key": "refNumber",
+                "label": "เลขที่หนังสือต้นทาง",
+                "type": "text",
+                "required": false
+            },
+            {
+                "key": "refDate",
+                "label": "วันที่หนังสือต้นทาง",
+                "type": "date",
+                "required": false
+            },
+            {
+                "key": "summary",
+                "label": "สรุปเรื่อง",
+                "type": "textarea",
+                "required": true
+            }
+        ],
+        "id": "doc_1bjqwhga",
+        "headerTitle": "บันทึกรับหนังสือ"
+    },
+    {
+        "active": true,
+        "name": "หนังสือออกภายนอก",
+        "category": "outgoing",
+        "recipientMode": "single",
+        "formSchema": [
+            {
+                "key": "toOrg",
+                "label": "เรียน (หน่วยงาน/บุคคลปลายทาง)",
+                "type": "text",
+                "required": true
+            },
+            {
+                "key": "content",
+                "label": "เนื้อหา",
+                "type": "textarea",
+                "required": true
+            }
+        ],
+        "id": "doc_1bjrn810",
+        "headerTitle": "หนังสือออก"
+    },
+    {
+        "active": true,
+        "name": "บันทึกข้อความ (ถึง ผอ.)",
+        "category": "memo_to_director",
+        "recipientMode": "single",
+        "formSchema": [
+            {
+                "key": "to",
+                "label": "เรียน",
+                "type": "text",
+                "required": true,
+                "default": "ผู้อำนวยการโรงเรียน"
+            },
+            {
+                "key": "content",
+                "label": "เนื้อหา/รายละเอียด",
+                "type": "textarea",
+                "required": true
+            },
+            {
+                "key": "signerName",
+                "label": "ลงชื่อ",
+                "type": "text",
+                "required": true
+            },
+            {
+                "key": "signerPosition",
+                "label": "ตำแหน่ง",
+                "type": "text",
+                "required": true
+            }
+        ],
+        "id": "doc_1bjs2x82",
+        "headerTitle": "บันทึกข้อความ"
+    },
+    {
+        "active": true,
+        "name": "บันทึกข้อความถึงครูทั้งโรงเรียน",
+        "category": "memo_all",
+        "recipientMode": "all",
+        "formSchema": [
+            {
+                "key": "to",
+                "label": "เรียน",
+                "type": "text",
+                "required": true,
+                "default": "คณะครูทุกท่าน"
+            },
+            {
+                "key": "content",
+                "label": "เนื้อหา",
+                "type": "textarea",
+                "required": true
+            },
+            {
+                "key": "signerName",
+                "label": "ลงชื่อ",
+                "type": "text",
+                "required": true
+            },
+            {
+                "key": "signerPosition",
+                "label": "ตำแหน่ง",
+                "type": "text",
+                "required": true
+            }
+        ],
+        "id": "doc_1bjtz702",
+        "headerTitle": "บันทึกข้อความ"
+    },
+    {
+        "active": true,
+        "name": "บันทึกข้อความถึงครูบางคน",
+        "category": "memo_some",
+        "recipientMode": "selected",
+        "formSchema": [
+            {
+                "key": "content",
+                "label": "เนื้อหา",
+                "type": "textarea",
+                "required": true
+            },
+            {
+                "key": "signerName",
+                "label": "ลงชื่อ",
+                "type": "text",
+                "required": true
+            },
+            {
+                "key": "signerPosition",
+                "label": "ตำแหน่ง",
+                "type": "text",
+                "required": true
+            }
+        ],
+        "id": "doc_1bju67ms",
+        "headerTitle": "บันทึกข้อความ"
+    },
+    {
+        "active": true,
+        "name": "ประกาศโรงเรียน",
+        "category": "announcement",
+        "recipientMode": "all",
+        "formSchema": [
+            {
+                "key": "content",
+                "label": "เนื้อหาประกาศ",
+                "type": "textarea",
+                "required": true
+            }
+        ],
+        "id": "doc_1bjv3076",
+        "headerTitle": "ประกาศ"
+    },
+    {
+        "active": true,
+        "name": "คำสั่งโรงเรียน (ทุกคน)",
+        "category": "order_all",
+        "recipientMode": "all",
+        "formSchema": [
+            {
+                "key": "content",
+                "label": "เนื้อหาคำสั่ง",
+                "type": "textarea",
+                "required": true
+            }
+        ],
+        "id": "doc_1bjwq9lz",
+        "headerTitle": "คำสั่ง"
+    },
+    {
+        "active": true,
+        "name": "คำสั่งโรงเรียน (เฉพาะบางคน)",
+        "category": "order_some",
+        "recipientMode": "selected",
+        "formSchema": [
+            {
+                "key": "content",
+                "label": "เนื้อหาคำสั่ง",
+                "type": "textarea",
+                "required": true
+            }
+        ],
+        "id": "doc_1bjxlvzg",
+        "headerTitle": "คำสั่ง"
+    },
+    {
+        "active": true,
+        "name": "ใบลา",
+        "category": "leave",
+        "recipientMode": "single",
+        "formSchema": [
+            {
+                "key": "leaveType",
+                "label": "ประเภทการลา",
+                "type": "select",
+                "options": [
+                    "ลาป่วย",
+                    "ลากิจ",
+                    "ลาพักผ่อน"
+                ],
+                "required": true
+            },
+            {
+                "key": "startDate",
+                "label": "ตั้งแต่วันที่",
+                "type": "date",
+                "required": true
+            },
+            {
+                "key": "endDate",
+                "label": "ถึงวันที่",
+                "type": "date",
+                "required": true
+            },
+            {
+                "key": "reason",
+                "label": "เหตุผล",
+                "type": "textarea",
+                "required": true
+            }
+        ],
+        "id": "doc_1bjyokkg",
+        "headerTitle": "บันทึกข้อความ"
+    }
+]

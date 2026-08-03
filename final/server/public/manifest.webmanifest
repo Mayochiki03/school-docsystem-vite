@@ -1,0 +1,11 @@
+{
+  "name": "ระบบแจ้งหนังสือราชการออนไลน์",
+  "short_name": "แจ้งหนังสือ",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#1e5f8c",
+  "icons": [
+    { "src": "/icons.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

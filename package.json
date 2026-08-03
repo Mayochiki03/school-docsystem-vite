@@ -1,0 +1,9 @@
+{
+  "name": "school-docsystem-root",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "build:web": "npm --prefix web run build",
+    "deploy": "npm run build:web && xcopy . \"\\\\192.168.3.12\\c$\\MyDoc\" /E /Y /I /Exclude:exclude-list.txt"
+  }
+}

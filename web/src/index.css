@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --color-primary: #1e5f8c;
+  --color-primary-dark: #164a6e;
+  --color-accent: #c9942f;
+  --color-bg: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-text: #1f2937;
+  --color-border: #e2e8f0;
+}
+
+.dark {
+  --color-primary: #4a9fd8;
+  --color-primary-dark: #3a86bb;
+  --color-accent: #d9ab4e;
+  --color-bg: #0f172a;
+  --color-surface: #1e293b;
+  --color-text: #e2e8f0;
+  --color-border: #334155;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Sarabun', 'Noto Sans Thai', system-ui, sans-serif;
+}
+
+/* ---------- แก้ปัญหา dropdown/select ตัวอักษรจางมองไม่เห็น (โดยเฉพาะโหมดมืด) ----------
+   บังคับให้กล่องตัวเลือก (popup ของ native <select>) ใช้พื้นหลังสว่าง+ตัวอักษรเข้มเสมอ
+   เพราะเบราว์เซอร์ไม่ได้ตาม CSS variable ของธีมเราตอนวาด popup นี้ */
+select {
+  color: var(--color-text);
+  color-scheme: light dark;
+}
+.dark select { color-scheme: dark; }
+select option {
+  color: #0f172a;
+  background: #ffffff;
+}
+
+/* ---------- แผ่นกระดาษ A4 สำหรับ preview/พิมพ์เอกสารแบบคลาสสิก (ย้ายมาจากระบบเดิม) ---------- */
+.a4-page {
+  width: 210mm; min-height: 297mm; background: #fff; color: #111;
+  padding: 22mm 20mm 18mm; margin: 0 auto; box-sizing: border-box; position: relative;
+  font-family: 'Sarabun', 'TH Sarabun New', sans-serif; font-size: 15.5px; line-height: 1.9;
+  overflow-wrap: break-word; word-break: break-word;
+}
+.a4-title { text-align: center; font-weight: 700; font-size: 1.25rem; margin-bottom: 1.1rem; text-decoration: underline; text-underline-offset: 4px; overflow-wrap: break-word; word-break: break-word; }
+.a4-school { font-weight: 700; margin-bottom: .3rem; }
+.a4-topline { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .3rem; flex-wrap: wrap; }
+.a4-row { margin-bottom: .25rem; overflow-wrap: break-word; word-break: break-word; }
+.a4-row b { display: inline-block; min-width: 46px; }
+.a4-content { margin-top: .6rem; margin-bottom: 75mm; text-align: justify; white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; }
+.a4-signblock-right { position: absolute; right: 20mm; bottom: 68mm; width: 45%; text-align: center; overflow-wrap: break-word; word-break: break-word; }
+.a4-signblock-left { position: absolute; left: 20mm; bottom: 18mm; width: 55%; text-align: left; overflow-wrap: break-word; word-break: break-word; }
+.a4-sigline { min-height: 46px; display: flex; align-items: flex-end; justify-content: center; }
+.a4-sigline img { max-height: 42px; }
+.a4-signblock-right .a4-sigline::before, .a4-signblock-left .a4-sigline::before { content: 'ลงชื่อ'; margin-right: .4rem; }
+.a4-signblock-left .a4-sigline { justify-content: flex-start; }
+.a4-note-lines { border-bottom: 1px dotted #999; min-height: 24px; margin-bottom: .3rem; text-align: left; padding-bottom: 2px; }
+
+#printArea { display: none; }
+
+@media print {
+  body { background: white !important; }
+  .no-print { display: none !important; }
+  body > *:not(#printArea) { display: none !important; }
+  #printArea { display: block !important; position: static; width: 210mm; margin: 0 auto; }
+  .a4-page { box-shadow: none; margin: 0; }
+  @page { size: A4; margin: 0; }
+}

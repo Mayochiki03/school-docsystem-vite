@@ -1,0 +1,26 @@
+[
+  {
+    "name": "สำนักงานผู้อำนวยการ",
+    "id": "dep_1bjdfa3e",
+    "headUserId": "use_1bjkkehe"
+  },
+  {
+    "name": "การเงิน",
+    "id": "dep_1bjeyxjv",
+    "headUserId": "use_1bjlp61o"
+  },
+  {
+    "name": "ทะเบียน",
+    "id": "dep_1bjf3w32",
+    "headUserId": "use_1bjminoh"
+  },
+  {
+    "name": "งานอาคารสถานที่/ช่าง",
+    "id": "dep_1bjgcpjg",
+    "headUserId": "use_1bjnscfd"
+  },
+  {
+    "name": "วิชาการ",
+    "id": "dep_1bjhglx7"
+  }
+]

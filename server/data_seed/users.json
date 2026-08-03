@@ -1,0 +1,99 @@
+[
+  {
+    "username": "admin",
+    "passwordHash": "c443c3ac4a8e00bc1c0c2009ebf80765:4c987731db90884de9f3ae3652272f1ce4a136de11cb74f443cec8d40931214d0d8e224697993a9ce4d22eb5caf83c7159b6988c3666605e19fe036652c9ac4e",
+    "fullName": "ผู้ดูแลระบบ",
+    "position": "Admin",
+    "role": "admin",
+    "active": true,
+    "departmentIds": [
+      "dep_1bjdfa3e"
+    ],
+    "id": "use_1bjildfr"
+  },
+  {
+    "username": "director",
+    "passwordHash": "2597a1b71c8ac8d943269ec9b50c203f:5fcd2708cf08f0de2eb9e06f9e7441565d529e05049800cde4e45d2b18d33dac337a7713e199ff8ed24781e97c6515e3818193fea24d163c8ccfc91f9ec1fe23",
+    "fullName": "ผู้อำนวยการโรงเรียน",
+    "position": "ผู้อำนวยการ",
+    "role": "director",
+    "active": true,
+    "departmentIds": [
+      "dep_1bjdfa3e"
+    ],
+    "id": "use_1bjj37l0"
+  },
+  {
+    "username": "office",
+    "passwordHash": "8ac0a4169c89d912454095c5d852955a:c0fe458115af5b3220a0e6940487d68ce585ffe63475fa838d834580f6eb295a603eebdf2121f941d103b4017fea89feb718168febc142cfa80298b53ac98ce0",
+    "fullName": "หัวหน้าสำนักงาน",
+    "position": "หัวหน้าสำนักงาน",
+    "role": "office_head",
+    "active": true,
+    "departmentIds": [
+      "dep_1bjdfa3e"
+    ],
+    "id": "use_1bjkkehe"
+  },
+  {
+    "username": "finance",
+    "passwordHash": "f9f30fdeae4d6753426845a367360f5a:c96d6ad6b3d2676ac76a3fa7e50bf4cd31ebcbe3f020eb8992e4c58727e896ca24dbd08aa8792a89a61f69970c829441b818140fcfe1226774a05bbddb2dc083",
+    "fullName": "เจ้าหน้าที่การเงิน",
+    "position": "เจ้าหน้าที่การเงิน",
+    "role": "staff",
+    "active": true,
+    "departmentIds": [
+      "dep_1bjeyxjv"
+    ],
+    "id": "use_1bjlp61o"
+  },
+  {
+    "username": "registry",
+    "passwordHash": "91ac3306666daea27faad76fc2df0a30:0b9c068140cf83b54e982fc4e380b395672b39b20f0aee57ed14d2e5ca62c9142d4630cb422f3efe35bb7f3d501888d70a40412ea5fb4ca422456062a8a01f3c",
+    "fullName": "เจ้าหน้าที่ทะเบียน",
+    "position": "เจ้าหน้าที่ทะเบียน",
+    "role": "staff",
+    "active": true,
+    "departmentIds": [
+      "dep_1bjeyxjv",
+      "dep_1bjf3w32"
+    ],
+    "id": "use_1bjminoh"
+  },
+  {
+    "username": "tech",
+    "passwordHash": "139585cb37cd3b33f939ce057e5b4fa8:fa29a6a4b3218068da731b0bfc2f6a401f9463d740f4de69bf9a01240ae4a200e03eeec4dfd76628659b34ed13ef23cfde9fac1b5f423b58ad9fe05bfb8b9845",
+    "fullName": "ช่างซ่อมบำรุง",
+    "position": "ช่าง",
+    "role": "staff",
+    "active": true,
+    "departmentIds": [
+      "dep_1bjgcpjg"
+    ],
+    "id": "use_1bjnscfd"
+  },
+  {
+    "username": "teacher",
+    "passwordHash": "73f27d1b8165ba5dc8dacbb2cb34ecab:6862a5b6bc036ad731dfc0d3a95480cb048e00e831bcb2d68ba399a805ff72b52cb6ce2e7974ea61f2e9a50bf99ee970fc0ed9f9b3fe9b47dda7eab1bef3fd5d",
+    "fullName": "ครูสมชาย ใจดี",
+    "position": "ครู คศ.1",
+    "role": "staff",
+    "active": true,
+    "departmentIds": [
+      "dep_1bjhglx7"
+    ],
+    "id": "use_1bjot0fk"
+  },
+  {
+    "username": "guard",
+    "passwordHash": "9cfed147b9c22bf3e0d13ae529e3568b:66099d435a236b0018fcfb205a4c7c8fe2e46f92ceaf5b211e0301464487a6ae6ab50fc163e31b934da16359be0427f2fca948235e360d3c01c9a1d0f212c781",
+    "fullName": "นายมั่นคง ยามเฝ้า",
+    "position": "ยาม (รปภ.)",
+    "role": "guard",
+    "active": true,
+    "departmentIds": [
+      "dep_1bjgcpjg"
+    ],
+    "id": "use_1bjphuft"
+  }
+]
