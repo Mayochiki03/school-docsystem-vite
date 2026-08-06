@@ -60,6 +60,13 @@ select option {
 .a4-signblock-right .a4-sigline::before, .a4-signblock-left .a4-sigline::before { content: 'ลงชื่อ'; margin-right: .4rem; }
 .a4-signblock-left .a4-sigline { justify-content: flex-start; }
 .a4-note-lines { border-bottom: 1px dotted #999; min-height: 24px; margin-bottom: .3rem; text-align: left; padding-bottom: 2px; }
+.a4-table { width: 100%; border-collapse: collapse; font-size: .92em; margin-bottom: .5rem; }
+.a4-table th, .a4-table td { border: 1px solid #999; padding: .25rem .4rem; text-align: left; vertical-align: top; overflow-wrap: break-word; word-break: break-word; }
+.a4-table th { background: #f1f5f9; font-weight: 600; }
+
+/* ---------- แผงพรีวิวเรียลไทม์ (หน้าสร้าง/แก้ไขเอกสาร) — ย่อขนาดกระดาษ A4 ให้พอดีกับพื้นที่แสดงผลจอ ---------- */
+.memo-preview-scale-wrap { width: 100%; overflow-y: auto; overflow-x: hidden; border-radius: .75rem; }
+.memo-preview-scale-inner { transform-origin: top left; }
 
 #printArea { display: none; }
 
@@ -68,6 +75,11 @@ select option {
   .no-print { display: none !important; }
   body > *:not(#printArea) { display: none !important; }
   #printArea { display: block !important; position: static; width: 210mm; margin: 0 auto; }
-  .a4-page { box-shadow: none; margin: 0; }
+  /* บังคับให้สูงเท่ากับ 1 หน้ากระดาษพอดี (ไม่ใช่แค่ min-height) — ถ้าปล่อยเป็น min-height เฉยๆ
+     พอความสูงจริงที่ render เกิน 297mm ไปเสี้ยวมิลลิเมตร (จากการปัดเศษ font/line-height) เบราว์เซอร์
+     จะดันหน้า 2 ออกมาเปล่าๆ แล้วบล็อกลงชื่อที่เป็น position:absolute; bottom: ... จะไปโผล่ที่หน้า 2
+     แทนหน้า 1 (เพราะ bottom-anchored element จะเกาะกับหน้าสุดท้ายของกล่องเสมอ ไม่ใช่หน้าแรก)
+     ล็อกความสูงตายตัว + overflow:hidden ตัดปัญหานี้ทั้งหมด รับประกันว่าพิมพ์ออกมาหน้าเดียวเสมอ */
+  .a4-page { box-shadow: none; margin: 0; height: 297mm; min-height: 0; overflow: hidden; page-break-after: avoid; page-break-inside: avoid; }
   @page { size: A4; margin: 0; }
 }

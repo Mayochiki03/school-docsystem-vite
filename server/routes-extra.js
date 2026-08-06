@@ -4,6 +4,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 const { parse: csvParse } = require('csv-parse/sync');
 const ExcelJS = require('exceljs');
 
@@ -254,7 +255,62 @@ module.exports = function registerExtraRoutes(api, helpers) {
   // สถานะระบบ + Log ภาพรวมแบบเรียลไทม์ (สำหรับแอดมินเช็คว่าระบบยังทำงานปกติ ไม่ต้องไปเปิด cmd ที่เครื่อง server)
   // ---------------------------------------------------------------
   const os = require('os');
+  const { APP_VERSION } = require('./version');
   const SERVER_STARTED_AT = new Date().toISOString();
+
+  // ตรวจพื้นที่ดิสก์ของ "ไดรฟ์ที่รันแอปอยู่จริง" — ใช้ path ของโฟลเดอร์ ROOT (server/) ตรงๆ
+  // จึงไม่ต้อง hardcode C:\ เอง: ตอน dev (Windows/Mac/Linux) หรือตอนรันจริงบนเครื่อง server (มักเป็น Windows ไดรฟ์ C
+  // หรือไดรฟ์อื่นที่ติดตั้งไว้) จะตรวจถูกไดรฟ์เสมอตามที่ ROOT ตั้งอยู่จริง ไม่ผูกกับ path ตายตัว
+  function getLocalDiskInfo() {
+    try {
+      if (typeof fs.statfsSync === 'function') {
+        const st = fs.statfsSync(ROOT);
+        const totalBytes = st.blocks * st.bsize;
+        const freeBytes = st.bfree * st.bsize;
+        if (totalBytes > 0) {
+          const usedBytes = totalBytes - freeBytes;
+          return {
+            available: true, path: ROOT,
+            totalMB: Math.round(totalBytes / 1024 / 1024),
+            freeMB: Math.round(freeBytes / 1024 / 1024),
+            usedMB: Math.round(usedBytes / 1024 / 1024),
+            usedPct: Math.round((usedBytes / totalBytes) * 100)
+          };
+        }
+        // เข้าเงื่อนไขนี้ได้ถ้า statfsSync รันผ่านแต่คืนค่า 0 ทุกฟิลด์ — เจอได้บน Windows บาง build/ไดรฟ์
+        // (เช่นไดรฟ์ที่ mount แบบพิเศษ) ไม่ throw error แต่ข้อมูลใช้ไม่ได้ ให้ตกไปใช้ fallback ข้างล่างแทน
+      }
+    } catch (e) {
+      // fs.statfsSync ใช้ไม่ได้ในสภาพแวดล้อมนี้ (พบได้บน Windows บางเครื่อง/บาง service account) — ตกไป fallback
+    }
+    // Fallback สำหรับ Windows: เรียก wmic ตรงๆ (ใช้ได้กับทุก Windows ที่มี wmic ติดตั้งมาให้อยู่แล้วเป็นค่าเริ่มต้น)
+    // ต้องมี fallback นี้เพราะ fs.statfsSync บน Windows บางเครื่อง/บาง service account (เช่นรันผ่าน NSSM ด้วย
+    // service account ที่ไม่ใช่ผู้ใช้ที่ล็อกอินอยู่) อาจเข้าถึงไดรฟ์ไม่ได้แบบเดียวกับตอนรันแบบ interactive ที่เครื่อง dev
+    if (process.platform === 'win32') {
+      try {
+        const driveLetter = path.parse(ROOT).root.replace(/[\\/]/g, ''); // เช่น "D:" จาก "D:\school-docsystem-vite\server"
+        const out = execSync(`wmic logicaldisk where "DeviceID='${driveLetter}'" get Size,FreeSpace /format:value`, { encoding: 'utf8', timeout: 5000 });
+        const sizeMatch = out.match(/Size=(\d+)/);
+        const freeMatch = out.match(/FreeSpace=(\d+)/);
+        if (sizeMatch && freeMatch) {
+          const totalBytes = Number(sizeMatch[1]);
+          const freeBytes = Number(freeMatch[1]);
+          const usedBytes = totalBytes - freeBytes;
+          return {
+            available: true, path: ROOT, viaFallback: 'wmic',
+            totalMB: Math.round(totalBytes / 1024 / 1024),
+            freeMB: Math.round(freeBytes / 1024 / 1024),
+            usedMB: Math.round(usedBytes / 1024 / 1024),
+            usedPct: totalBytes > 0 ? Math.round((usedBytes / totalBytes) * 100) : null
+          };
+        }
+        return { available: false, reason: 'wmic ทำงานแต่แกะค่าจากผลลัพธ์ไม่ได้ (' + out.slice(0, 200) + ')' };
+      } catch (e2) {
+        return { available: false, reason: 'fs.statfsSync ใช้ไม่ได้ และ wmic ก็ล้มเหลวด้วย: ' + e2.message };
+      }
+    }
+    return { available: false, reason: 'ไม่รองรับการตรวจพื้นที่ดิสก์บนระบบปฏิบัติการนี้' };
+  }
 
   api['GET /api/admin/system-status'] = async (req, res, ctx, user) => {
     if (!user || user.role !== 'admin') return sendJson(res, 403, { error: 'ต้องเป็นแอดมิน' });
@@ -269,6 +325,7 @@ module.exports = function registerExtraRoutes(api, helpers) {
       }
     } catch (e) { /* เพิกเฉยได้ ไม่ใช่ข้อมูลสำคัญ */ }
     sendJson(res, 200, {
+      appVersion: APP_VERSION,
       serverStartedAt: SERVER_STARTED_AT,
       uptimeSeconds: process.uptime(),
       nodeVersion: process.version,
@@ -278,6 +335,7 @@ module.exports = function registerExtraRoutes(api, helpers) {
       loadAverage: os.loadavg(), // [1min, 5min, 15min] เฉพาะ Linux/Mac มีค่าจริง บน Windows จะได้ [0,0,0] เสมอ (ข้อจำกัดของ Node เอง ไม่ใช่บั๊ก)
       cpuCount: os.cpus().length,
       diskInfo,
+      localDisk: getLocalDiskInfo(),
       docCount: db.documents.all().length,
       userCount: db.users.all().length
     });

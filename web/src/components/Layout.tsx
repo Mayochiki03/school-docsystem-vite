@@ -94,9 +94,9 @@ export default function Layout({ children }: { children: ReactNode }) {
     { to: '/admin/users', label: t('users'), icon: Users, show: canManageUsers || !!(user.role === 'staff' && (user as any).headsDepartment) },
     { to: '/admin/document-types', label: t('documentTypes'), icon: FileStack, show: isAdmin || user.role === 'office_head' },
     { to: '/admin/backups', label: t('backups'), icon: Database, show: canManageBackups },
-    { to: '/admin/duty', label: 'จัดการเวรครู', icon: ClipboardList, show: canManageDuty },
-    { to: '/admin/translations', label: 'จัดการคำแปล', icon: Globe, show: isAdmin },
-    { to: '/admin/system-log', label: 'สถานะระบบ/Log', icon: Activity, show: isAdmin },
+    { to: '/admin/duty', label: t('navManageDuty'), icon: ClipboardList, show: canManageDuty },
+    { to: '/admin/translations', label: t('navTranslations'), icon: Globe, show: isAdmin },
+    { to: '/admin/system-log', label: t('navSystemLog'), icon: Activity, show: isAdmin },
     { to: '/announcements', label: t('announcements'), icon: Megaphone, show: isAdmin },
     { to: '/admin/settings', label: t('settings'), icon: Settings, show: isAdmin || canManageFeatures },
   ];
@@ -145,7 +145,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
         <nav className="flex-1 overflow-y-auto px-2 py-4">
           <NavGroup items={mainNav} />
-          <NavGroup items={opsNav} title="งานประจำ" />
+          <NavGroup items={opsNav} title={t('navOpsGroupTitle')} />
           <NavGroup items={adminNav} title={t('admin')} />
         </nav>
       </aside>

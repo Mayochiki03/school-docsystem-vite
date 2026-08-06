@@ -152,11 +152,13 @@ export default function AdminDuty() {
           {oversight?.rows.map((r, i) => (
             <div key={i} className="border border-[var(--color-border)] rounded-lg p-3 text-sm">
               <div className="flex items-center justify-between">
-                <span className="font-medium">{r.title} · {r.scheduledTime}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${r.done ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{r.done ? t('dutyLogged') : t('dutyNotLogged')}</span>
+                <span className="font-medium">{r.title}{r.times?.length > 0 && <span className="text-xs text-slate-400 font-normal"> · {r.times.join(', ')}</span>}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${r.done ? 'bg-emerald-100 text-emerald-700' : r.status === 'draft' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                  {r.done ? t('dutyLogged') : r.status === 'draft' ? t('dutySaveDraft') : t('dutyNotLogged')}
+                </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">{t('responsibleLabel')} {r.ownerName}</p>
-              {r.done && (
+              {(r.done || r.status === 'draft') && (
                 <>
                   {r.note && <p className="text-xs mt-1">{r.note}{r.ok === false ? ` · ⚠ ${t('dutyAbnormalFound')}` : ''}</p>}
                   {r.photoPaths?.length > 0 && (

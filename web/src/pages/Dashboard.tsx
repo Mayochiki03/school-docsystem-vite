@@ -8,7 +8,8 @@ import { FileText, Clock, CheckCircle2, AlertTriangle, ChevronRight } from 'luci
 
 interface ActionItem { key: string; docId: string | null; subject: string; typeName: string; meta: string; urgent: boolean; createdAt: string }
 interface StatusRow { status: string; label: string; count: number }
-interface DashboardData { total: number; overdueCount: number; completedCount: number; actionItems: ActionItem[]; actionCount: number; statusBreakdown: StatusRow[] }
+interface StalledItem { docId: string; subject: string; typeName: string; waitingOn: string[]; daysSinceUpdate: number }
+interface DashboardData { total: number; overdueCount: number; completedCount: number; actionItems: ActionItem[]; actionCount: number; statusBreakdown: StatusRow[]; stalledItems: StalledItem[] }
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -90,6 +91,29 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {data && data.stalledItems && data.stalledItems.length > 0 && (
+        <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] p-5">
+          <h2 className="font-semibold mb-4 text-sm">{t('dashStalledItemsTitle')}</h2>
+          <div className="space-y-1">
+            {data.stalledItems.map(item => (
+              <Link key={item.docId} to={`/documents/${item.docId}`}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 -mx-1">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${item.daysSinceUpdate >= 7 ? 'bg-rose-500' : item.daysSinceUpdate >= 3 ? 'bg-amber-500' : 'bg-slate-300'}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">{item.subject}</p>
+                  <p className="text-xs text-slate-500 truncate">
+                    {item.typeName}
+                    {item.waitingOn.length > 0 && <> · {t('dashStalledWaitingOn')} {item.waitingOn.join(', ')}</>}
+                    {' · '}{item.daysSinceUpdate} {t('dashStalledDaysLabel')}
+                  </p>
+                </div>
+                <ChevronRight size={16} className="text-slate-300 shrink-0" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -23,6 +23,7 @@ scheduleDailyBackup();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const STATIC_FORMS_DIR = path.join(__dirname, 'static-forms');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const MIME = {
@@ -96,12 +97,18 @@ function sanitizeUser(u) {
 }
 
 // ---------- Static file serving ----------
+if (!fs.existsSync(STATIC_FORMS_DIR)) fs.mkdirSync(STATIC_FORMS_DIR, { recursive: true });
+
 function serveStatic(req, res, pathname) {
   let baseDir = PUBLIC_DIR;
   let relative = pathname;
   if (pathname.startsWith('/uploads/')) {
     baseDir = UPLOAD_DIR;
     relative = pathname.slice('/uploads'.length);
+  } else if (pathname.startsWith('/static-forms/')) {
+    // ฟอร์ม PDF คงที่ (เช่นฟอร์มราชการซับซ้อนที่ยังไม่รองรับกรอกดิจิทัล) — ดู server/static-forms/README.md
+    baseDir = STATIC_FORMS_DIR;
+    relative = pathname.slice('/static-forms'.length);
   } else if (pathname === '/') {
     relative = '/index.html';
   }
@@ -186,6 +193,58 @@ api['GET /api/me'] = async (req, res, ctx, user) => {
   if (!user) return sendJson(res, 401, { error: 'unauthorized' });
   const depts = (user.departmentIds || []).map(id => db.departments.get(id)).filter(Boolean);
   sendJson(res, 200, { user: sanitizeUser(user), departments: depts });
+};
+
+// ---- ฟอร์ม PDF คงที่: เดิมต้องเข้าไปวางไฟล์เองผ่าน Windows Explorer/NAS แล้วพิมพ์ชื่อไฟล์ให้ตรงเป๊ะในหน้าเว็บ
+// (พิมพ์ผิด/พิมพ์ตกแม้แค่ตัวเดียวก็เจอ 404 ตอนพนักงานเปิดฟอร์ม) ตอนนี้เพิ่ม 2 endpoint ให้ทำทุกอย่างผ่านหน้าเว็บได้เลย:
+// 1) list ไฟล์ที่มีอยู่แล้ว ให้เลือกจาก dropdown แทนพิมพ์เอง (กันพิมพ์ผิด)
+// 2) upload ไฟล์ใหม่ตรงจากเบราว์เซอร์ ไม่ต้องเปิด File Explorer ไปวางที่เครื่อง server เอง
+api['GET /api/static-forms'] = async (req, res, ctx, user) => {
+  if (!user) return sendJson(res, 401, {});
+  let files = [];
+  try {
+    files = fs.readdirSync(STATIC_FORMS_DIR)
+      .filter(f => /\.pdf$/i.test(f) && f !== 'README.md')
+      .map(f => {
+        const stat = fs.statSync(path.join(STATIC_FORMS_DIR, f));
+        return { fileName: f, sizeKb: Math.round(stat.size / 1024), uploadedAt: stat.mtime.toISOString() };
+      })
+      .sort((a, b) => a.fileName.localeCompare(b.fileName));
+  } catch (e) { /* โฟลเดอร์ว่าง/ยังไม่มีไฟล์ ก็คืน [] ปกติ */ }
+  sendJson(res, 200, files);
+};
+api['POST /api/static-forms'] = async (req, res, ctx, user) => {
+  if (!user || !perm.hasCapability(user, 'manage_document_types')) return sendJson(res, 403, { error: 'ไม่มีสิทธิ์' });
+  const body = await readBody(req); // { fileName, base64 }
+  if (!body.fileName || !body.base64) return sendJson(res, 400, { error: 'ข้อมูลไฟล์ไม่ครบ' });
+  if (!/\.pdf$/i.test(body.fileName)) return sendJson(res, 400, { error: 'รองรับเฉพาะไฟล์ .pdf เท่านั้น' });
+  // บังคับกติกาเดียวกับที่ README.md เขียนไว้ (อังกฤษ/ตัวเลข/ขีดกลางเท่านั้น ห้ามช่องว่าง/ภาษาไทย)
+  // กันตั้งแต่ต้นทาง ไม่ต้องพึ่งให้ผู้ใช้พิมพ์ตามคู่มือเองแล้วอาจพลาด
+  const baseName = body.fileName.replace(/\.pdf$/i, '');
+  if (!/^[a-zA-Z0-9-]+$/.test(baseName)) {
+    return sendJson(res, 400, { error: 'ชื่อไฟล์ต้องเป็นอักษรอังกฤษ/ตัวเลข/ขีดกลางเท่านั้น ห้ามมีช่องว่างหรือภาษาไทย เช่น edu-welfare-child-kt16.pdf' });
+  }
+  const safeName = baseName + '.pdf';
+  const filePath = path.join(STATIC_FORMS_DIR, safeName);
+  if (fs.existsSync(filePath) && !body.overwrite) {
+    return sendJson(res, 409, { error: `มีไฟล์ชื่อ "${safeName}" อยู่แล้ว ถ้าต้องการแทนที่ไฟล์เดิม กรุณายืนยันการเขียนทับ` });
+  }
+  const base64Data = body.base64.replace(/^data:.*;base64,/, '');
+  fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+  logAudit(null, user.id, 'upload_static_form', safeName);
+  sendJson(res, 201, { fileName: safeName });
+};
+api['DELETE /api/static-forms/:fileName'] = async (req, res, ctx, user) => {
+  if (!user || !perm.hasCapability(user, 'manage_document_types')) return sendJson(res, 403, { error: 'ไม่มีสิทธิ์' });
+  const fileName = ctx.params.fileName;
+  if (!/^[a-zA-Z0-9-]+\.pdf$/i.test(fileName)) return sendJson(res, 400, { error: 'ชื่อไฟล์ไม่ถูกต้อง' });
+  // กันลบไฟล์ที่ยังมีประเภทเอกสารอ้างอิงอยู่ ไม่งั้นประเภทเอกสารเดิมจะเปิดฟอร์มไม่ได้ทันที
+  const inUse = db.documentTypes.find(t => t.staticPdfFileName === fileName);
+  if (inUse.length) return sendJson(res, 400, { error: `ลบไม่ได้ — ยังมีประเภทเอกสาร "${inUse.map(t => t.name).join(', ')}" ใช้ไฟล์นี้อยู่` });
+  const filePath = path.join(STATIC_FORMS_DIR, fileName);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  logAudit(null, user.id, 'delete_static_form', fileName);
+  sendJson(res, 200, { ok: true });
 };
 
 // ---- Departments (admin CRUD) ----
@@ -301,7 +360,8 @@ api['POST /api/documentTypes'] = async (req, res, ctx, user) => {
     name: body.name, category: body.category || 'other',
     recipientMode: body.recipientMode || 'single', requiresScan: !!body.requiresScan,
     formSchema: body.formSchema, active: true,
-    headerTitle: body.headerTitle || 'บันทึกข้อความ'
+    headerTitle: body.headerTitle || 'บันทึกข้อความ',
+    workflowMode: body.workflowMode || 'standard', fixedDeptId: body.fixedDeptId || null
   });
   sendJson(res, 201, t);
 };
@@ -345,7 +405,7 @@ api['GET /api/documents'] = async (req, res, ctx, user) => {
     const myDocIds = new Set(
       db.tasks.find(t =>
         t.status !== 'done' &&
-        (t.assignedToUserId === user.id || (t.assignedToDeptId && userDeptIds.includes(t.assignedToDeptId)))
+        (t.assignedToUserId === user.id || (t.assignedToDeptId && (userDeptIds.includes(t.assignedToDeptId) || perm.isDeptHeadOf(user, t.assignedToDeptId))))
       ).map(t => t.documentId)
     );
     if (user.role === 'director') {
@@ -374,6 +434,32 @@ api['POST /api/documents'] = async (req, res, ctx, user) => {
   const type = db.documentTypes.get(body.typeId);
   if (!type) return sendJson(res, 400, { error: 'ไม่พบประเภทเอกสาร' });
   if (!body.subject) return sendJson(res, 400, { error: 'ต้องระบุเรื่อง' });
+
+  // เอกสารบางประเภทไม่ต้องผ่านหัวหน้าสำนักงาน/ผอ. เลย — ส่งตรงถึงหัวหน้าแผนกที่กำหนดไว้ (เช่น การเงิน/ทะเบียน/พัสดุ)
+  // ตั้งค่าไว้ที่หน้า "ประเภทเอกสาร" (workflowMode: 'direct_to_dept')
+  if (type.workflowMode === 'direct_to_dept') {
+    const targetDeptId = type.fixedDeptId || body.targetDeptId;
+    if (!targetDeptId) return sendJson(res, 400, { error: 'เอกสารประเภทนี้ต้องระบุแผนกปลายทาง' });
+    const dept = db.departments.get(targetDeptId);
+    if (!dept) return sendJson(res, 400, { error: 'ไม่พบแผนกปลายทางที่เลือก' });
+    if (!dept.headUserId) return sendJson(res, 400, { error: `แผนก "${dept.name}" ยังไม่ได้กำหนดหัวหน้าแผนก กรุณาแจ้งแอดมินตั้งหัวหน้าแผนกก่อน (หน้าจัดการผู้ใช้งาน)` });
+    const doc = db.documents.insert({
+      docNumber: body.docNumber || '', docYear: body.docYear || '',
+      typeId: body.typeId, subject: body.subject, fields: body.fields || {},
+      confidential: !!body.confidential, status: 'in_progress',
+      createdBy: user.id, dueDate: body.dueDate || null, createdAt: new Date().toISOString(),
+      creatorSignature: body.signature || null
+    });
+    logAudit(doc.id, user.id, 'created', `สร้างเอกสารประเภท ${type.name} (ส่งตรงถึงแผนก ${dept.name})`);
+    db.history.insert({ documentId: doc.id, actorId: user.id, action: 'created', note: `ส่งตรงถึงแผนก "${dept.name}" (ไม่ผ่านหัวหน้าสำนักงาน/ผอ.)`, timestamp: new Date().toISOString() });
+    db.tasks.insert({
+      documentId: doc.id, assignedToUserId: null, assignedToDeptId: dept.id,
+      assignedBy: user.id, instructions: '', status: 'pending',
+      createdAt: new Date().toISOString(), completedAt: null
+    });
+    notify(dept.headUserId, doc.id, `มีเอกสารใหม่ส่งถึงแผนก "${dept.name}" โดยตรง (คุณเป็นหัวหน้าแผนก): ${doc.subject}`);
+    return sendJson(res, 201, doc);
+  }
 
   // ถ้าผู้อำนวยการเป็นผู้จัดทำเอกสารเอง ถือว่าอนุมัติ/เกษียนแล้วโดยอัตโนมัติ ไม่ต้องกดอนุมัติซ้ำ
   const isDirectorAuthored = user.role === 'director';
@@ -459,11 +545,14 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     if (user.role !== 'director' && user.role !== 'admin') return sendJson(res, 403, { error: 'เฉพาะผู้อำนวยการ' });
     if (doc.status !== 'pending_director' && user.role !== 'admin') return sendJson(res, 400, { error: 'เอกสารนี้ยังไม่ผ่านการตรวจกรองจากหัวหน้าสำนักงาน' });
     const decision = body.decision || 'acknowledge'; // approve / acknowledge / reject
-    db.documents.update(doc.id, { status: decision === 'reject' ? 'rejected' : 'endorsed' });
+    const patch = { status: decision === 'reject' ? 'rejected' : 'endorsed' };
+    const nowIso = new Date().toISOString();
+    if (decision === 'reject') { patch.rejectedBy = user.id; patch.rejectedAt = nowIso; patch.restoreToStatus = 'pending_director'; }
+    db.documents.update(doc.id, patch);
     db.history.insert({
       documentId: doc.id, actorId: user.id, action: 'endorsed',
       note: body.note || '', signatureName: user.fullName, signatureImage: body.signature || null,
-      timestamp: new Date().toISOString()
+      timestamp: nowIso
     });
     logAudit(doc.id, user.id, 'endorse', decision);
     // แจ้งผู้สร้างและหัวหน้าสำนักงาน
@@ -510,7 +599,7 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     const task = db.tasks.findOne(t => t.id === body.taskId && t.documentId === doc.id);
     if (!task) return sendJson(res, 404, { error: 'ไม่พบงานที่มอบหมาย' });
     const userDeptIds = user.departmentIds || [];
-    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && userDeptIds.includes(task.assignedToDeptId));
+    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && (userDeptIds.includes(task.assignedToDeptId) || perm.isDeptHeadOf(user, task.assignedToDeptId)));
     if (!allowed) return sendJson(res, 403, { error: 'คุณไม่ได้รับมอบหมายงานนี้' });
     db.tasks.update(task.id, { status: 'acknowledged' });
     db.history.insert({ documentId: doc.id, actorId: user.id, action: 'acknowledged', note: '', signatureName: user.fullName, timestamp: new Date().toISOString() });
@@ -523,7 +612,7 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     const task = db.tasks.findOne(t => t.id === body.taskId && t.documentId === doc.id);
     if (!task) return sendJson(res, 404, { error: 'ไม่พบงานที่มอบหมาย' });
     const userDeptIds = user.departmentIds || [];
-    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && userDeptIds.includes(task.assignedToDeptId));
+    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && (userDeptIds.includes(task.assignedToDeptId) || perm.isDeptHeadOf(user, task.assignedToDeptId)));
     if (!allowed) return sendJson(res, 403, { error: 'คุณไม่ได้รับมอบหมายงานนี้' });
     if (!body.note || !body.note.trim()) return sendJson(res, 400, { error: 'กรุณาพิมพ์รายงานผลการดำเนินงานก่อนกดเสร็จสิ้น' });
     db.tasks.update(task.id, { status: 'done', completedAt: new Date().toISOString() });
@@ -600,8 +689,12 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
       db.history.insert({ documentId: doc.id, actorId: user.id, action: 'returned_for_revision', note: body.note, signatureName: user.fullName, timestamp: new Date().toISOString() });
       notify(doc.createdBy, doc.id, `เอกสารถูกตีกลับให้แก้ไข (จากหัวหน้าสำนักงาน): ${doc.subject}`);
     } else {
-      db.documents.update(doc.id, { status: 'rejected', officeComment: body.note });
-      db.history.insert({ documentId: doc.id, actorId: user.id, action: 'rejected', note: body.note, signatureName: user.fullName, timestamp: new Date().toISOString() });
+      const nowIso = new Date().toISOString();
+      db.documents.update(doc.id, {
+        status: 'rejected', officeComment: body.note,
+        rejectedBy: user.id, rejectedAt: nowIso, restoreToStatus: 'pending_office_review'
+      });
+      db.history.insert({ documentId: doc.id, actorId: user.id, action: 'rejected', note: body.note, signatureName: user.fullName, timestamp: nowIso });
       notify(doc.createdBy, doc.id, `เอกสารไม่ได้รับการอนุมัติ: ${doc.subject}`);
     }
     logAudit(doc.id, user.id, 'office_review', decision + (body.note ? ': ' + body.note : ''));
@@ -609,6 +702,25 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
   }
 
   // ผู้จัดทำแก้ไขเอกสารที่ถูกตีกลับ แล้วส่งกลับเข้าคิวตรวจกรองใหม่
+  if (action === 'update') {
+    // แก้ไขเอกสารของตัวเองได้ตอนยัง "รอตรวจกรอง" อยู่ (ยังไม่มีใครเริ่มพิจารณาจริงจัง) — ต่างจาก resubmit ตรงที่
+    // ไม่เปลี่ยนสถานะ (อยู่ที่ pending_office_review เหมือนเดิม ไม่ต้องเข้าคิวใหม่) และไม่ถือเป็นการ "ตีกลับแล้วแก้"
+    // พอสถานะเปลี่ยนไปจากนี้แล้ว (เข้าสู่การพิจารณาจริง) จะแก้ไม่ได้อีกจนกว่าจะถูกตีกลับกลับมา
+    if (doc.createdBy !== user.id && user.role !== 'admin') return sendJson(res, 403, { error: 'เฉพาะผู้จัดทำเอกสารเท่านั้น' });
+    if (doc.status !== 'pending_office_review') return sendJson(res, 400, { error: 'แก้ไขได้เฉพาะตอนเอกสารยังอยู่ในสถานะรอตรวจกรองเท่านั้น (ถ้าผ่านการพิจารณาไปแล้วต้องรอถูกตีกลับก่อน)' });
+    const patch = {};
+    if (body.subject) patch.subject = body.subject;
+    if (body.fields) patch.fields = body.fields;
+    if (body.confidential !== undefined) patch.confidential = body.confidential;
+    if (body.dueDate !== undefined) patch.dueDate = body.dueDate;
+    if (body.signature !== undefined) patch.creatorSignature = body.signature;
+    db.documents.update(doc.id, patch);
+    // ลง log ว่าใครแก้ไขและเมื่อไหร่ แต่ไม่ลงรายละเอียดว่าแก้ตรงไหนบ้าง (ตามที่ขอไว้ตอนออกแบบหน้าแก้ไขเอกสารตีกลับ)
+    db.history.insert({ documentId: doc.id, actorId: user.id, action: 'edited', note: body.note || 'แก้ไขข้อมูลระหว่างรอตรวจกรอง', signatureName: user.fullName, timestamp: new Date().toISOString() });
+    logAudit(doc.id, user.id, 'update', body.note || '');
+    return sendJson(res, 200, { ok: true });
+  }
+
   if (action === 'resubmit') {
     if (doc.createdBy !== user.id && user.role !== 'admin') return sendJson(res, 403, { error: 'เฉพาะผู้จัดทำเอกสารเท่านั้น' });
     if (!['returned', 'returned_for_revision'].includes(doc.status)) return sendJson(res, 400, { error: 'เอกสารนี้ไม่ได้อยู่ในสถานะตีกลับ' });
@@ -617,10 +729,30 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     if (body.fields) patch.fields = body.fields;
     if (body.docNumber !== undefined) patch.docNumber = body.docNumber;
     if (body.docYear !== undefined) patch.docYear = body.docYear;
+    if (body.confidential !== undefined) patch.confidential = body.confidential;
+    if (body.dueDate !== undefined) patch.dueDate = body.dueDate;
+    if (body.signature !== undefined) patch.creatorSignature = body.signature;
     db.documents.update(doc.id, patch);
     db.history.insert({ documentId: doc.id, actorId: user.id, action: 'resubmitted', note: body.note || 'แก้ไขแล้วส่งใหม่', timestamp: new Date().toISOString() });
     db.users.find(u => u.active && (u.role === 'office_head' || perm.hasCapability(u, 'review_documents'))).forEach(h => notify(h.id, doc.id, `เอกสารแก้ไขแล้ว ส่งกลับมาให้ตรวจกรองอีกครั้ง: ${doc.subject}`));
     logAudit(doc.id, user.id, 'resubmit', body.note || '');
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (action === 'restore') {
+    // กู้คืนเอกสารจากถังขยะ (สถานะ 'rejected') — ทำได้เฉพาะคนที่เป็นคนตีกลับ/ไม่อนุมัติเอกสารนี้เอง (หรือแอดมิน)
+    // และต้องกู้คืนภายใน 30 วันนับจากวันที่ถูกปฏิเสธ ป้องกันการกู้คืนเอกสารเก่าเก็บฝุ่นย้อนหลังนานๆ
+    if (doc.status !== 'rejected') return sendJson(res, 400, { error: 'เอกสารนี้ไม่ได้อยู่ในถังขยะ' });
+    if (doc.rejectedBy !== user.id && user.role !== 'admin') return sendJson(res, 403, { error: 'กู้คืนได้เฉพาะผู้ที่ตีกลับ/ไม่อนุมัติเอกสารนี้เท่านั้น' });
+    const RESTORE_WINDOW_DAYS = 30;
+    const rejectedAt = doc.rejectedAt ? new Date(doc.rejectedAt) : null;
+    const daysPassed = rejectedAt ? (Date.now() - rejectedAt.getTime()) / 86400000 : Infinity;
+    if (daysPassed > RESTORE_WINDOW_DAYS) return sendJson(res, 400, { error: `พ้นกำหนด ${RESTORE_WINDOW_DAYS} วันแล้ว ไม่สามารถกู้คืนได้อีก` });
+    const restoreToStatus = doc.restoreToStatus || 'pending_office_review';
+    db.documents.update(doc.id, { status: restoreToStatus, rejectedBy: null, rejectedAt: null, restoreToStatus: null });
+    db.history.insert({ documentId: doc.id, actorId: user.id, action: 'restored', note: body.note || 'กู้คืนจากถังขยะ', signatureName: user.fullName, timestamp: new Date().toISOString() });
+    notify(doc.createdBy, doc.id, `เอกสารถูกกู้คืนจากถังขยะและกลับเข้าสู่การพิจารณาอีกครั้ง: ${doc.subject}`);
+    logAudit(doc.id, user.id, 'restore', body.note || '');
     return sendJson(res, 200, { ok: true });
   }
 
@@ -644,6 +776,25 @@ api['POST /api/documents/:id/attachments'] = async (req, res, ctx, user) => {
   });
   logAudit(doc.id, user.id, 'attach_file', body.fileName);
   sendJson(res, 201, att);
+};
+
+// ลบไฟล์แนบ — ใช้ตอนแก้ไขเอกสารที่ถูกตีกลับ หรือตอนยังรอตรวจกรองอยู่เท่านั้น (ผู้จัดทำเอกสารเอง หรือแอดมิน)
+// กันไม่ให้ใครมาลบไฟล์แนบของเอกสารที่ผ่านการพิจารณาไปแล้ว เพราะจะทำให้หลักฐานที่ผู้ตรวจเคยเห็นหายไป
+api['DELETE /api/documents/:id/attachments/:attId'] = async (req, res, ctx, user) => {
+  if (!user) return sendJson(res, 401, {});
+  const doc = db.documents.get(ctx.params.id);
+  if (!doc) return sendJson(res, 404, { error: 'ไม่พบเอกสาร' });
+  if (doc.createdBy !== user.id && user.role !== 'admin') return sendJson(res, 403, { error: 'เฉพาะผู้จัดทำเอกสารเท่านั้น' });
+  if (!['returned', 'returned_for_revision', 'pending_office_review'].includes(doc.status)) return sendJson(res, 400, { error: 'ลบไฟล์แนบได้เฉพาะตอนเอกสารถูกตีกลับให้แก้ไข หรือยังรอตรวจกรองอยู่เท่านั้น' });
+  const att = db.attachments.find(a => a.documentId === doc.id).find(a => a.id === ctx.params.attId);
+  if (!att) return sendJson(res, 404, { error: 'ไม่พบไฟล์แนบ' });
+  try {
+    const diskPath = path.join(__dirname, att.filePath.replace(/^\/uploads\//, 'uploads/'));
+    if (fs.existsSync(diskPath)) fs.unlinkSync(diskPath);
+  } catch (e) { /* ไฟล์อาจถูกลบไปแล้ว ไม่เป็นไร */ }
+  db.attachments.remove(att.id);
+  logAudit(doc.id, user.id, 'remove_attachment', att.fileName);
+  sendJson(res, 200, { ok: true });
 };
 
 // ---- Backup (admin only) ----
@@ -773,7 +924,8 @@ api['POST /api/admin/backups/import'] = async (req, res, ctx, user) => {
   } catch (e) { sendJson(res, 500, { error: 'นำเข้าล้มเหลว: ' + e.message }); }
 };
 // กู้คืนข้อมูล — สลับข้อมูลปัจจุบันด้วยชุดสำรองที่เลือก (สำรองของปัจจุบันไว้ก่อนเสมอเพื่อความปลอดภัย)
-// หมายเหตุ: ต้องรีสตาร์ทเซิร์ฟเวอร์หลังกู้คืน เพราะข้อมูลที่โหลดไว้ในหน่วยความจำจะยังเป็นชุดเก่าจนกว่าจะเริ่มโปรเซสใหม่
+// หมายเหตุ: เดิมต้องรีสตาร์ทเซิร์ฟเวอร์เองหลังกู้คืน เพราะข้อมูลที่โหลดไว้ในหน่วยความจำยังเป็นชุดเก่า
+// ตอนนี้ระบบสั่งรีสตาร์ทให้อัตโนมัติแทน (เหมือนรีสตาร์ทตอนตี 3 ทุกคืน) จึงต้องมี NSSM/PM2 ตั้ง auto-restart ไว้ (ดู README)
 api['POST /api/admin/backups/restore'] = async (req, res, ctx, user) => {
   if (!user || user.role !== 'admin') return sendJson(res, 403, { error: 'ต้องเป็นแอดมิน' });
   const body = await readBody(req);
@@ -787,18 +939,48 @@ api['POST /api/admin/backups/restore'] = async (req, res, ctx, user) => {
     sourceDir = path.join(__dirname, 'backups', body.name);
   }
   if (!fs.existsSync(sourceDir)) return sendJson(res, 404, { error: 'ไม่พบชุดสำรองนี้' });
+  let dbClosed = false; // สำคัญ: ต้องรู้ว่าปิด connection ไปแล้วหรือยัง เพื่อตัดสินใจตอน error ว่าต้อง restart บังคับหรือไม่
   try {
     // สำรองข้อมูลปัจจุบันไว้ก่อนเสมอ กันพลาด
     const safetyResult = runBackup();
+    // ปิดการเชื่อมต่อฐานข้อมูลก่อนแตะโฟลเดอร์ data/ เสมอ — บน Windows ถ้าไฟล์ database.db ยังถูกโปรเซสนี้เปิดค้างอยู่
+    // (better-sqlite3 ถือ handle ไว้ตลอดอายุโปรเซส) การสั่งลบ/ทับโฟลเดอร์จะเจอ EPERM ทันที (เคยเจอปัญหานี้ตอนรันบนเครื่อง server จริง)
+    try { db._raw.close(); dbClosed = true; } catch (e) { dbClosed = true; /* เพิกเฉยได้ถ้าปิดไปแล้ว — ถือว่าปิดแล้วเช่นกัน */ }
     // สลับข้อมูล: คัดลอก data/ และ uploads/ จากชุดที่เลือกมาทับของปัจจุบัน
     const dataDir = path.join(__dirname, 'data'), uploadDir = path.join(__dirname, 'uploads');
-    fs.rmSync(dataDir, { recursive: true, force: true });
-    fs.rmSync(uploadDir, { recursive: true, force: true });
+    fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    fs.rmSync(uploadDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
     copyDirRecursive(path.join(sourceDir, 'data'), dataDir);
     copyDirRecursive(path.join(sourceDir, 'uploads'), uploadDir);
-    logAudit(null, user.id, 'restore_backup', `${body.name} (สำรองของเดิมไว้ที่ ${safetyResult.dest} ก่อนกู้คืน)`);
-    sendJson(res, 200, { ok: true, safetyBackup: safetyResult.dest, message: 'คัดลอกข้อมูลเรียบร้อยแล้ว กรุณาหยุดและรันเซิร์ฟเวอร์ใหม่ (restart) เพื่อให้มีผล' });
-  } catch (e) { sendJson(res, 500, { error: 'กู้คืนข้อมูลล้มเหลว: ' + e.message }); }
+    // สำคัญ: ห้ามเรียก logAudit(...) ตรงนี้เด็ดขาด — db._raw.close() ไปแล้วด้านบน ต่อให้เปิดใหม่ก็ยังผิดอยู่ดี
+    // เพราะไฟล์ database.db ที่เพิ่ง copy ทับไปคือฐานข้อมูล "เก่า" ของชุดสำรอง ไม่มีทางมีเหตุการณ์ restore ที่กำลัง
+    // เกิดขึ้นตอนนี้บันทึกอยู่ในนั้นได้อยู่แล้ว (เป็นสาเหตุของบั๊ก "database connection is not open" ที่เจอ
+    // ทุกครั้งที่กู้คืน — เขียน log ไปหา DB ที่ปิดไปแล้วและกำลังจะถูกแทนที่) เปลี่ยนไปเขียนเป็นไฟล์ text ธรรมดา
+    // แยกไว้นอกโฟลเดอร์ data/ แทน เพื่อให้ประวัติการกู้คืนอยู่รอดข้ามการสลับฐานข้อมูลได้จริง
+    try {
+      const logLine = `${new Date().toISOString()} | restore_backup | user=${user.username || user.id} | source=${body.name} | safetyBackup=${safetyResult.dest}\n`;
+      fs.appendFileSync(path.join(__dirname, 'backups', 'restore-history.log'), logLine);
+    } catch (e) { /* เขียน log ไม่ได้ก็ไม่ควรทำให้การกู้คืนที่สำเร็จแล้วถือว่าล้มเหลว เพิกเฉยได้ */ }
+    sendJson(res, 200, {
+      ok: true, safetyBackup: safetyResult.dest,
+      message: 'กู้คืนข้อมูลสำเร็จ'
+    });
+    // เดิมตรงนี้ต้องสั่ง process.exit() ให้ NSSM/PM2 restart เอง (พึ่งพา process manager ภายนอก ไม่มีบนเครื่อง dev)
+    // ตอนนี้เปลี่ยนมาเปิด connection ใหม่ในโปรเซสเดียวกันแทน ไม่ต้อง restart ทั้งแอปอีกต่อไป ข้อมูลในหน่วยความจำ
+    // ที่โหลดไว้ตอนนี้เป็นชุดเก่าก็ไม่ใช่ปัญหา เพราะทุก route อ่านจาก db.xxx.all()/get() สดใหม่ทุกครั้งอยู่แล้ว
+    // ไม่มีการ cache ข้อมูลไว้ใน memory แยกจาก DB
+    db.reopen();
+  } catch (e) {
+    // แก้บั๊กสำคัญ: เดิมถ้าล้มเหลวตรงนี้ *หลังจาก* ปิด db ไปแล้ว (เช่น copy ไฟล์พลาดกลางทาง) โปรเซสจะค้างอยู่ในสภาพ
+    // db ปิดถาวรตลอดไป ทุก request หลังจากนี้จะพัง ("database connection is not open" รัวๆ) — ตอนนี้ไม่ต้องรอ
+    // restart ทั้งโปรเซสอีกแล้ว แค่เปิด connection ใหม่ทันที (ชี้กลับไปที่ไฟล์ที่มีอยู่ตอนนี้ ไม่ว่าจะเป็นของเดิม
+    // หรือของใหม่ที่ copy มาสำเร็จไปครึ่งทาง) ระบบกลับมาใช้งานได้ทันทีโดยไม่ต้องรอใครมา restart เครื่อง
+    if (dbClosed) { try { db.reopen(); } catch (e2) { /* ไม่มีทางเลือกอื่นแล้วจริงๆ ถ้ายังพังอีก ต้อง restart เอง */ } }
+    sendJson(res, 500, {
+      error: 'กู้คืนข้อมูลล้มเหลว: ' + e.message +
+        (dbClosed ? ' — ระบบเปิดการเชื่อมต่อฐานข้อมูลใหม่ให้แล้วอัตโนมัติ ลองรีเฟรชหน้าเว็บแล้วตรวจสอบข้อมูลอีกครั้ง (มีสำรองของเดิมไว้ก่อนแตะแล้วที่ ' + (typeof safetyResult !== 'undefined' && safetyResult ? safetyResult.dest : '(ไม่ทราบ)') + ')' : ' — ลองใหม่อีกครั้งได้เลย ยังไม่มีอะไรถูกแก้ไข')
+    });
+  }
 };
 
 // ---- Guard checklist (เวรยามประจำวัน) ----
@@ -1038,6 +1220,19 @@ api['DELETE /api/duty/heads/:id'] = async (req, res, ctx, user) => {
   sendJson(res, 200, { ok: true });
 };
 
+// เวลาที่อนุญาตให้ "ส่งเวรอย่างเป็นทางการ" ได้ (ก่อนเวลานี้บันทึกร่าง/แนบรูปได้ แต่กดส่งจริงไม่ได้)
+// ปรับได้ผ่าน env DUTY_SUBMIT_CUTOFF รูปแบบ "HH:MM" (ค่าเริ่มต้น 17:20)
+const DUTY_SUBMIT_CUTOFF = process.env.DUTY_SUBMIT_CUTOFF || '17:20';
+function isPastDutyCutoff(now = new Date()) {
+  const [h, m] = DUTY_SUBMIT_CUTOFF.split(':').map(Number);
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+  return now.getTime() >= cutoff.getTime();
+}
+// ดึงบันทึกเวรของ "วันนี้" สำหรับ dutyType หนึ่งๆ (1 dutyType ต่อ 1 วัน มีได้แค่ 1 รายการเท่านั้น ไม่ว่าจะเป็นร่างหรือส่งแล้ว)
+function findTodayDutyLog(dutyTypeId, date) {
+  return db.dutyLogs.findOne(l => l.dutyTypeId === dutyTypeId && l.date === date);
+}
+
 // เวรของฉันวันนี้ + ทีมที่ฉันดูแล (ถ้าเป็นหัวหน้าเวร) + คำขอรอตอบรับ
 api['GET /api/duty/mine'] = async (req, res, ctx, user) => {
   if (!user) return sendJson(res, 401, {});
@@ -1045,14 +1240,16 @@ api['GET /api/duty/mine'] = async (req, res, ctx, user) => {
   const allTypes = db.dutyTypes.find(t => t.active !== false);
   const myTypes = allTypes.filter(t => effectiveDutyOwner(t, date) === user.id);
   const logs = db.dutyLogs.find(l => l.date === date);
-  const slots = [];
-  myTypes.forEach(t => {
-    (t.times || []).forEach(time => {
-      const log = logs.filter(l => l.dutyTypeId === t.id && l.scheduledTime === time).sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))[0] || null;
-      slots.push({ dutyTypeId: t.id, title: t.title, scheduledTime: time, done: !!log, log });
-    });
+  // 1 การ์ดต่อ 1 dutyType ต่อวัน (ไม่แยกตามช่วงเวลาอีกต่อไป) — times ยังคงแสดงเป็นข้อมูลอ้างอิงว่าต้องไปยืนช่วงไหนบ้าง
+  const slots = myTypes.map(t => {
+    const log = findTodayDutyLog(t.id, date);
+    const submitted = !!(log && log.status === 'submitted');
+    const locked = !!(log && log.reviewedBy);
+    return {
+      dutyTypeId: t.id, title: t.title, times: t.times || [],
+      done: submitted, locked, log
+    };
   });
-  slots.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
   const usersById = {}; db.users.all().forEach(u => usersById[u.id] = sanitizeUser(u));
   const typesById = {}; allTypes.forEach(t => typesById[t.id] = t);
   const pendingForMe = db.dutyCoverage.find(c => c.substituteUserId === user.id && c.status === 'pending').map(c => ({
@@ -1064,40 +1261,88 @@ api['GET /api/duty/mine'] = async (req, res, ctx, user) => {
   const teamTypes = myHeadDays.length ? allTypes.filter(t => (t.daysOfWeek || []).some(d => myHeadDays.includes(d))).map(t => {
     const ownerId = effectiveDutyOwner(t, date);
     const activeToday = dutyActiveOnDate(t, date);
+    const log = findTodayDutyLog(t.id, date);
     return {
       id: t.id, title: t.title, dayNames: (t.daysOfWeek || []).map(d => DAY_NAMES[d]).join(', '),
       ownerName: ownerId ? (usersById[ownerId] ? usersById[ownerId].fullName : '-') : (usersById[t.primaryUserId] ? usersById[t.primaryUserId].fullName : '-'),
-      activeToday, doneToday: activeToday ? logs.some(l => l.dutyTypeId === t.id) : null
+      activeToday, doneToday: activeToday ? !!(log && log.status === 'submitted') : null
     };
   }) : [];
-  sendJson(res, 200, { date, slots, pendingForMe, teamTypes, isAnyDutyHead: myHeadDays.length > 0, hasAnyDuty: myTypes.length > 0 || teamTypes.length > 0 });
+  sendJson(res, 200, {
+    date, slots, pendingForMe, teamTypes,
+    isAnyDutyHead: myHeadDays.length > 0, hasAnyDuty: myTypes.length > 0 || teamTypes.length > 0,
+    submitCutoff: DUTY_SUBMIT_CUTOFF, pastCutoff: isPastDutyCutoff()
+  });
 };
 
-api['POST /api/duty/logs'] = async (req, res, ctx, user) => {
-  if (!user) return sendJson(res, 401, {});
-  const body = await readBody(req);
-  const type = db.dutyTypes.get(body.dutyTypeId);
-  if (!type) return sendJson(res, 404, { error: 'ไม่พบเวร' });
-  if (effectiveDutyOwner(type, todayStr()) !== user.id) return sendJson(res, 403, { error: 'คุณไม่ใช่ผู้รับผิดชอบเวรนี้ในวันนี้' });
-  if (!body.scheduledTime) return sendJson(res, 400, { error: 'ต้องระบุช่วงเวลา' });
-  if (!body.note || !body.note.trim()) return sendJson(res, 400, { error: 'กรุณาระบุรายละเอียด (บังคับกรอก)' });
-  const photos = Array.isArray(body.photos) ? body.photos : [];
-  const savedPhotos = photos.map((base64, idx) => {
+// เดิม: ต้องบันทึกแยกทุกช่วงเวลาใน 1 วัน (เช้า/เที่ยง/เย็น กด "ส่ง" ทีละครั้ง)
+// ใหม่: บันทึกร่างสะสมได้ตลอดวัน (แนบรูป/เขียนโน้ตได้เรื่อยๆ ไม่หาย แม้ logout แล้ว login ใหม่)
+// แล้วกด "ส่งเวร" อย่างเป็นทางการได้แค่ครั้งเดียวต่อวันหลังเวลา DUTY_SUBMIT_CUTOFF เท่านั้น
+function saveDutyPhotos(photos) {
+  return (Array.isArray(photos) ? photos : []).map((base64, idx) => {
+    if (typeof base64 !== 'string' || !base64.startsWith('data:')) return base64; // เป็น path เดิมอยู่แล้ว (รูปที่บันทึกไว้ก่อนหน้านี้) ไม่ต้องเขียนซ้ำ
     const safeName = `duty_${Date.now()}_${idx}.jpg`;
     fs.writeFileSync(path.join(UPLOAD_DIR, safeName), Buffer.from(base64.replace(/^data:.*;base64,/, ''), 'base64'));
     return '/uploads/' + safeName;
   });
-  const log = db.dutyLogs.insert({
-    dutyTypeId: type.id, scheduledTime: body.scheduledTime, date: todayStr(), actingUserId: user.id,
-    note: body.note.trim(), ok: body.ok !== false, photoPaths: savedPhotos, submittedAt: new Date().toISOString(),
+}
+function assertCanEditDutyLog(existing, res) {
+  if (existing && existing.reviewedBy) { sendJson(res, 403, { error: 'หัวหน้าเวรตรวจแล้ว ไม่สามารถแก้ไขได้อีก' }); return false; }
+  return true;
+}
+
+// บันทึกร่าง — เรียกซ้ำได้เรื่อยๆ ตลอดวัน ไม่บังคับกรอกครบ ไม่เช็คเวลา
+api['PUT /api/duty/logs/draft'] = async (req, res, ctx, user) => {
+  if (!user) return sendJson(res, 401, {});
+  const body = await readBody(req);
+  const type = db.dutyTypes.get(body.dutyTypeId);
+  if (!type) return sendJson(res, 404, { error: 'ไม่พบเวร' });
+  const today = todayStr();
+  if (effectiveDutyOwner(type, today) !== user.id) return sendJson(res, 403, { error: 'คุณไม่ใช่ผู้รับผิดชอบเวรนี้ในวันนี้' });
+  const existing = findTodayDutyLog(type.id, today);
+  if (!assertCanEditDutyLog(existing, res)) return;
+  const savedPhotos = saveDutyPhotos(body.photos);
+  const patch = {
+    dutyTypeId: type.id, date: today, actingUserId: user.id,
+    note: (body.note || '').trim(), ok: body.ok !== false, photoPaths: savedPhotos,
     signature: body.signature || null,
     coSignerUserId: body.coSignerUserId || null,
-    coSignature: body.coSignerUserId ? (body.coSignature || null) : null
-  });
+    coSignature: body.coSignerUserId ? (body.coSignature || null) : null,
+    status: 'draft', draftUpdatedAt: new Date().toISOString()
+  };
+  const log = existing ? db.dutyLogs.update(existing.id, patch) : db.dutyLogs.insert(patch);
+  sendJson(res, 200, log);
+};
+
+// ส่งเวรอย่างเป็นทางการ — กดได้ครั้งเดียวต่อวันต่อเวร และต้องอยู่หลังเวลา DUTY_SUBMIT_CUTOFF เท่านั้น
+api['POST /api/duty/logs/submit'] = async (req, res, ctx, user) => {
+  if (!user) return sendJson(res, 401, {});
+  const body = await readBody(req);
+  const type = db.dutyTypes.get(body.dutyTypeId);
+  if (!type) return sendJson(res, 404, { error: 'ไม่พบเวร' });
+  const today = todayStr();
+  if (effectiveDutyOwner(type, today) !== user.id) return sendJson(res, 403, { error: 'คุณไม่ใช่ผู้รับผิดชอบเวรนี้ในวันนี้' });
+  const existing = findTodayDutyLog(type.id, today);
+  if (!assertCanEditDutyLog(existing, res)) return;
+  if (existing && existing.status === 'submitted') return sendJson(res, 400, { error: 'ส่งเวรวันนี้ไปแล้ว' });
+  if (!isPastDutyCutoff()) return sendJson(res, 400, { error: `ส่งเวรอย่างเป็นทางการได้ตั้งแต่เวลา ${DUTY_SUBMIT_CUTOFF} เป็นต้นไปเท่านั้น (ตอนนี้บันทึกร่างเก็บไว้ก่อนได้)` });
+  const note = (body.note ?? existing?.note ?? '').trim();
+  if (!note) return sendJson(res, 400, { error: 'กรุณาระบุรายละเอียด (บังคับกรอก)' });
+  const savedPhotos = saveDutyPhotos(body.photos ?? existing?.photoPaths ?? []);
+  const patch = {
+    dutyTypeId: type.id, date: today, actingUserId: user.id,
+    note, ok: body.ok !== undefined ? body.ok !== false : (existing ? existing.ok !== false : true),
+    photoPaths: savedPhotos,
+    signature: body.signature ?? existing?.signature ?? null,
+    coSignerUserId: body.coSignerUserId ?? existing?.coSignerUserId ?? null,
+    coSignature: (body.coSignerUserId ?? existing?.coSignerUserId) ? (body.coSignature ?? existing?.coSignature ?? null) : null,
+    status: 'submitted', submittedAt: new Date().toISOString()
+  };
+  const log = existing ? db.dutyLogs.update(existing.id, patch) : db.dutyLogs.insert(patch);
   // แจ้งหัวหน้าเวรของวันนี้ให้เข้ามาตรวจ
-  const head = dutyHeadForDay(isoDayOfWeek(todayStr()));
-  if (head) notify(head.headUserId, null, `${user.fullName} บันทึกเวร "${type.title}" แล้ว รอตรวจ`);
-  sendJson(res, 201, log);
+  const head = dutyHeadForDay(isoDayOfWeek(today));
+  if (head) notify(head.headUserId, null, `${user.fullName} ส่งเวร "${type.title}" แล้ว รอตรวจ`);
+  sendJson(res, 200, log);
 };
 
 // หัวหน้าเวรประจำวันตรวจรายการที่บันทึกไว้ + เขียนความเห็น + ลงชื่อกำกับ
@@ -1168,6 +1413,8 @@ api['POST /api/duty/coverage/:id/respond'] = async (req, res, ctx, user) => {
 };
 
 // มุมมองภาพรวมเวรครูสำหรับผู้มีสิทธิ์จัดการ + หัวหน้าเวรประจำวันนั้น (เพื่อเข้ามาตรวจ+ลงชื่อ) + ผอ. (เพื่อลงนามขั้นสุดท้าย)
+// เปลี่ยนจากแยกแถวตามช่วงเวลา (เช้า/เที่ยง/เย็น) เป็น 1 แถวต่อ 1 เวรต่อวัน พร้อมสถานะชัดเจนว่า
+// "ส่งแล้ว (submitted)" / "บันทึกร่างไว้ยังไม่ส่ง (draft)" / "ยังไม่ทำอะไรเลย (missing)" — เพื่อให้หัวหน้าเวรเห็นได้ทันทีว่าใครยังไม่ส่ง
 api['GET /api/duty/oversight'] = async (req, res, ctx, user) => {
   if (!user) return sendJson(res, 401, {});
   const date = ctx.query.date || todayStr();
@@ -1175,29 +1422,32 @@ api['GET /api/duty/oversight'] = async (req, res, ctx, user) => {
   const canView = perm.hasCapability(user, 'manage_teacher_duty') || isHeadOfThisDay || user.role === 'director' || user.role === 'admin';
   if (!canView) return sendJson(res, 403, { error: 'ไม่มีสิทธิ์' });
   const types = db.dutyTypes.find(t => t.active !== false).filter(t => dutyActiveOnDate(t, date));
-  const logs = db.dutyLogs.find(l => l.date === date);
   const usersById = {}; db.users.all().forEach(u => usersById[u.id] = sanitizeUser(u));
-  const rows = [];
-  types.forEach(t => {
+  const rows = types.map(t => {
     const ownerId = effectiveDutyOwner(t, date);
-    (t.times || []).forEach(time => {
-      const log = logs.filter(l => l.dutyTypeId === t.id && l.scheduledTime === time)[0] || null;
-      rows.push({
-        id: log ? log.id : null,
-        title: t.title, scheduledTime: time, ownerName: usersById[ownerId] ? usersById[ownerId].fullName : '-',
-        done: !!log, note: log ? log.note : '', ok: log ? log.ok : null, photoPaths: log ? log.photoPaths : [],
-        submittedAt: log ? log.submittedAt : null,
-        signature: log ? log.signature : null,
-        coSignerName: log && log.coSignerUserId && usersById[log.coSignerUserId] ? usersById[log.coSignerUserId].fullName : null,
-        coSignature: log ? log.coSignature : null,
-        reviewedBy: log && log.reviewedBy && usersById[log.reviewedBy] ? usersById[log.reviewedBy].fullName : null,
-        reviewNote: log ? log.reviewNote : null, reviewSignature: log ? log.reviewSignature : null, reviewedAt: log ? log.reviewedAt : null,
-        directorNote: log ? log.directorNote : null, directorSignature: log ? log.directorSignature : null, directorSignedAt: log ? log.directorSignedAt : null
-      });
-    });
+    const log = findTodayDutyLog(t.id, date);
+    const status = log ? log.status || 'submitted' /* ข้อมูลเก่าก่อนอัปเดตระบบ ไม่มี status ให้ถือว่าส่งแล้ว */ : 'missing';
+    return {
+      id: log ? log.id : null,
+      dutyTypeId: t.id, title: t.title, times: t.times || [],
+      ownerName: usersById[ownerId] ? usersById[ownerId].fullName : '-',
+      status, done: status === 'submitted',
+      note: log ? log.note : '', ok: log ? log.ok : null, photoPaths: log ? log.photoPaths : [],
+      submittedAt: log ? log.submittedAt : null, draftUpdatedAt: log ? log.draftUpdatedAt : null,
+      signature: log ? log.signature : null,
+      coSignerName: log && log.coSignerUserId && usersById[log.coSignerUserId] ? usersById[log.coSignerUserId].fullName : null,
+      coSignature: log ? log.coSignature : null,
+      reviewedBy: log && log.reviewedBy && usersById[log.reviewedBy] ? usersById[log.reviewedBy].fullName : null,
+      reviewNote: log ? log.reviewNote : null, reviewSignature: log ? log.reviewSignature : null, reviewedAt: log ? log.reviewedAt : null,
+      directorNote: log ? log.directorNote : null, directorSignature: log ? log.directorSignature : null, directorSignedAt: log ? log.directorSignedAt : null
+    };
   });
-  rows.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
-  sendJson(res, 200, { date, rows, isHeadOfThisDay, isDirector: user.role === 'director' || user.role === 'admin' });
+  rows.sort((a, b) => a.title.localeCompare(b.title, 'th'));
+  const missingCount = rows.filter(r => r.status === 'missing').length;
+  sendJson(res, 200, {
+    date, rows, isHeadOfThisDay, isDirector: user.role === 'director' || user.role === 'admin',
+    missingCount, submitCutoff: DUTY_SUBMIT_CUTOFF
+  });
 };
 
 // ---- บันทึกรถเข้า-ออกโรงเรียน (สำหรับยาม) — ถ่ายแล้วบันทึกทันที ไม่ต้องกรอกฟอร์ม ----
@@ -1298,7 +1548,7 @@ api['GET /api/dashboard'] = async (req, res, ctx, user) => {
   }
   // งานที่ได้รับมอบหมาย (ทุกคน)
   const userDeptIds = user.departmentIds || [];
-  db.tasks.find(t => t.status !== 'done' && (t.assignedToUserId === user.id || (t.assignedToDeptId && userDeptIds.includes(t.assignedToDeptId)))).forEach(t => {
+  db.tasks.find(t => t.status !== 'done' && (t.assignedToUserId === user.id || (t.assignedToDeptId && (userDeptIds.includes(t.assignedToDeptId) || perm.isDeptHeadOf(user, t.assignedToDeptId))))).forEach(t => {
     const d = db.documents.get(t.documentId);
     if (!d) return;
     addItem({ key: 'task_' + t.id, docId: d.id, subject: d.subject, typeName: typesById[d.typeId] ? typesById[d.typeId].name : '-', meta: t.status === 'pending' ? 'งานใหม่ รอรับทราบ' : 'รอดำเนินการให้แล้วเสร็จ', urgent: t.status === 'pending', createdAt: t.createdAt });
@@ -1306,10 +1556,10 @@ api['GET /api/dashboard'] = async (req, res, ctx, user) => {
   // เวรครูวันนี้ (ยังไม่บันทึก)
   try {
     const myDutyTypes = db.dutyTypes.find(dt => dt.active !== false && effectiveDutyOwner(dt, today) === user.id);
-    const todayLogs = db.dutyLogs.find(l => l.date === today);
     myDutyTypes.forEach(dt => {
-      const notDone = (dt.times || []).some(time => !todayLogs.some(l => l.dutyTypeId === dt.id && l.scheduledTime === time));
-      if (notDone) addItem({ key: 'duty_' + dt.id, docId: null, dutyId: dt.id, subject: 'เวร: ' + dt.title, typeName: 'เวรครูวันนี้', meta: 'ยังไม่ได้บันทึกเวรวันนี้', urgent: true, createdAt: new Date().toISOString() });
+      const log = findTodayDutyLog(dt.id, today);
+      const notDone = !(log && log.status === 'submitted');
+      if (notDone) addItem({ key: 'duty_' + dt.id, docId: null, dutyId: dt.id, subject: 'เวร: ' + dt.title, typeName: 'เวรครูวันนี้', meta: 'ยังไม่ได้ส่งเวรวันนี้', urgent: true, createdAt: new Date().toISOString() });
     });
   } catch (e) { /* ระบบเวรครูอาจยังไม่ถูกใช้งาน ข้ามไปเงียบๆ */ }
   // คำขอรับมอบเวรที่รอตอบรับ
@@ -1333,12 +1583,49 @@ api['GET /api/dashboard'] = async (req, res, ctx, user) => {
     completed: 'เสร็จสิ้น',
     rejected: 'ไม่อนุมัติ'
   };
-  const statusBreakdown = Object.keys(STATUS_LABELS).map(status => ({
+  // ผอ. ไม่จำเป็นต้องเห็นขั้นตอนที่ยังมาไม่ถึงตัวเอง (เช่น "รอหัวหน้าสำนักงานตรวจกรอง" เป็นงานภายในของ สนง.
+  // ที่ยังไม่ถูกส่งต่อมาให้ ผอ. พิจารณา) แสดงเฉพาะขั้นตอนที่เกี่ยวกับ ผอ. โดยตรงหรือหลังจากนั้น เพื่อลดความสับสน
+  // ว่า "ทำไมมีงานค้างเยอะ" ทั้งที่จริงๆ ยังไม่ถึงคิวท่านเลย
+  const DIRECTOR_VISIBLE_STATUSES = ['pending_director', 'returned', 'endorsed', 'in_progress', 'completed', 'rejected'];
+  const visibleStatuses = user.role === 'director'
+    ? Object.keys(STATUS_LABELS).filter(s => DIRECTOR_VISIBLE_STATUSES.includes(s))
+    : Object.keys(STATUS_LABELS);
+  const statusBreakdown = visibleStatuses.map(status => ({
     status, label: STATUS_LABELS[status],
     count: allDocs.filter(d => d.status === status).length
   }));
 
-  sendJson(res, 200, { total: allDocs.length, overdueCount, completedCount, actionItems: actionItems.slice(0, 15), actionCount: actionItems.length, statusBreakdown });
+  // เอกสารที่ "ค้างอยู่ระหว่างดำเนินการ" นานๆ — ช่วยตอบคำถาม "ทำไมงานนี้ยังไม่เสร็จสักที ติดอะไรอยู่"
+  // โดยไม่ต้องไล่เปิดทีละเอกสาร บอกด้วยว่าตอนนี้ค้างรอใคร/แผนกไหนอยู่ กดเข้าไปดู log รายละเอียดต่อได้ทันที
+  let stalledItems = [];
+  if (['director', 'office_head', 'admin'].includes(user.role) || perm.hasCapability(user, 'review_documents')) {
+    const usersById = {}; db.users.all().forEach(u => usersById[u.id] = u);
+    const deptsById = {}; db.departments.all().forEach(d => deptsById[d.id] = d);
+    stalledItems = allDocs
+      .filter(d => d.status === 'in_progress')
+      .map(d => {
+        const openTasks = db.tasks.find(t => t.documentId === d.id && t.status !== 'done');
+        const waitingOn = openTasks.map(t => {
+          if (t.assignedToUserId) return (usersById[t.assignedToUserId] || {}).fullName || 'ไม่ทราบชื่อ';
+          if (t.assignedToDeptId) return 'แผนก' + ((deptsById[t.assignedToDeptId] || {}).name || '-');
+          return null;
+        }).filter(Boolean);
+        // ไม่มีการเก็บ updatedAt ของเอกสารแยกไว้ต่างหาก ใช้เวลาของ history entry ล่าสุดแทน (แม่นกว่า createdAt
+        // เพราะ createdAt คือตอนสร้างเอกสารครั้งแรก ไม่ใช่ตอนล่าสุดที่มีความเคลื่อนไหว)
+        const docHistory = db.history.find(h => h.documentId === d.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const lastActivityAt = docHistory[0]?.timestamp || d.createdAt;
+        return {
+          docId: d.id, subject: d.subject,
+          typeName: typesById[d.typeId] ? typesById[d.typeId].name : '-',
+          waitingOn,
+          daysSinceUpdate: Math.floor((now - new Date(lastActivityAt).getTime()) / 86400000)
+        };
+      })
+      .sort((a, b) => b.daysSinceUpdate - a.daysSinceUpdate)
+      .slice(0, 10);
+  }
+
+  sendJson(res, 200, { total: allDocs.length, overdueCount, completedCount, actionItems: actionItems.slice(0, 15), actionCount: actionItems.length, statusBreakdown, stalledItems });
 };
 
 require('./routes-extra')(api, { db, auth, perm, sendJson, readBody, logAudit, sanitizeUser, ROOT: __dirname });
@@ -1388,6 +1675,15 @@ async function requestHandler(req, res) {
     await match.handler(req, res, { params: match.params, query: parsed.query }, user);
   } catch (err) {
     console.error(err);
+    // ตาข่ายนิรภัย: ถ้า error เกิดจาก "การเชื่อมต่อฐานข้อมูลถูกปิด" (ปกติไม่ควรเกิดขึ้นแล้วหลังแก้บั๊กจุดกู้คืนข้อมูล
+    // แต่กันไว้เผื่ออนาคตมีจุดอื่นพลาดแบบเดียวกัน) ให้รีสตาร์ทเซิร์ฟเวอร์ทันทีแทนที่จะปล่อยให้ทุก request พังไปเรื่อยๆ
+    // จนกว่าจะมีคนสังเกตแล้วรีสตาร์ทเอง — ต้องตั้ง NSSM/PM2 auto-restart ไว้ (ดู README) ไม่งั้นเว็บจะไม่ฟื้นเอง
+    if (String(err.message || '').includes('database connection is not open')) {
+      console.error('*** ตรวจพบฐานข้อมูลถูกปิดกลางคัน กำลังรีสตาร์ทเซิร์ฟเวอร์อัตโนมัติ... ***');
+      sendJson(res, 503, { error: 'เซิร์ฟเวอร์กำลังรีสตาร์ท กรุณารอสักครู่แล้วลองใหม่' });
+      setTimeout(() => process.exit(1), 500);
+      return;
+    }
     sendJson(res, 500, { error: 'เกิดข้อผิดพลาดภายในระบบ', detail: String(err.message || err) });
   }
 }

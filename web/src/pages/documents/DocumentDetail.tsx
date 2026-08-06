@@ -5,71 +5,16 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api, type Attachment } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../context/I18nContext';
-import SignaturePad, { TEXT_SIGNATURE_PREFIX } from '../../components/SignaturePad';
+import SignaturePad from '../../components/SignaturePad';
+import MemoSheet from '../../components/MemoSheet';
 import AttachmentPicker, { type PendingFile, uploadPendingFiles } from '../../components/AttachmentPicker';
 import PersonMultiSelect from '../../components/PersonMultiSelect';
 import PersonSelect from '../../components/PersonSelect';
 import { fmtDateTime } from '../../utils/datetime';
 import {
   Printer, CheckCircle, XCircle, RotateCcw, Send, UserCheck, X,
-  Paperclip, FileUp, FileText, Users
+  Paperclip, FileUp, FileText, Users, Pencil, Undo2
 } from 'lucide-react';
-
-function fmtDateThai(iso?: string | null) {
-  if (!iso) return '-';
-  return new Date(iso).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
-}
-
-// ลายเซ็นเก็บได้ 2 แบบ: รูปภาพ (data:image/... จากวาด/อัปโหลด) หรือข้อความล้วน (พิมพ์ชื่อ)
-// ฟังก์ชันนี้ render ให้ถูกแบบ ไม่ยัดทุกอย่างเป็น <img> เหมือนเดิม
-function SignatureMark({ value }: { value?: string | null }) {
-  if (!value) return null;
-  if (value.startsWith(TEXT_SIGNATURE_PREFIX)) {
-    const name = value.slice(TEXT_SIGNATURE_PREFIX.length);
-    return <span className="italic underline" style={{ fontSize: 18 }}>{name}</span>;
-  }
-  return <img src={value} />;
-}
-
-// แบบฟอร์มบันทึกข้อความมาตรฐาน — ใช้กับเอกสารทุกประเภทเหมือนกันหมด (เอาระบบจัดหน้ากระดาษแบบลากวางออกแล้ว
-// เพื่อไม่ให้เอกสารจัดวางเพี้ยน) อ้างอิงหน้าตาจากระบบเดิม: หัวกระดาษ/เรื่อง/เรียน/เนื้อหา + บล็อกลงชื่อผู้จัดทำและผู้เกษียนหนังสือ
-function ClassicMemoSheet({ doc, type, history, schoolName }: { doc: any; type: any; history: any[]; schoolName: string }) {
-  const fieldsByKey: Record<string, any> = doc.fields || {};
-  const knownKeys = ['to', 'content', 'signerName', 'signerPosition'];
-  const extraFields = (type?.formSchema || []).filter((f: any) => !knownKeys.includes(f.key));
-  const endorseEntry = history.find((h: any) => h.action === 'endorsed' && h.signatureImage);
-
-  return (
-    <div className="a4-page">
-      <div className="a4-title">{type?.headerTitle || 'บันทึกข้อความ'}</div>
-      <div className="a4-school">{schoolName}</div>
-      <div className="a4-topline">
-        <span>ที่ {doc.docNumber || '-'} / {doc.docYear || '-'}</span>
-        <span>วันที่ {fmtDateThai(doc.createdAt)}</span>
-      </div>
-      <div className="a4-row"><b>เรื่อง</b> {doc.subject}</div>
-      {fieldsByKey.to && <div className="a4-row"><b>เรียน</b> {fieldsByKey.to}</div>}
-      {extraFields.map((f: any) => (
-        <div className="a4-row" key={f.key}><b>{f.label}</b> {fieldsByKey[f.key] || '-'}</div>
-      ))}
-      {fieldsByKey.content && <div className="a4-content">{fieldsByKey.content}</div>}
-
-      <div className="a4-signblock-right">
-        <div className="a4-sigline"><SignatureMark value={doc.creatorSignature} /></div>
-        <div>({fieldsByKey.signerName || doc.createdByName || '-'})</div>
-        <div>ตำแหน่ง {fieldsByKey.signerPosition || doc.createdByPosition || '-'}</div>
-      </div>
-      {endorseEntry && (
-        <div className="a4-signblock-left">
-          {endorseEntry.note ? <div className="a4-note-lines">{endorseEntry.note}</div> : <div className="a4-note-lines">&nbsp;</div>}
-          <div className="a4-sigline"><SignatureMark value={endorseEntry.signatureImage} /></div>
-          <div>({endorseEntry.actorName})</div>
-          <div>{fmtDateThai(endorseEntry.timestamp)}</div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function isPdf(fileName: string) { return /\.pdf$/i.test(fileName); }
 function isImage(fileName: string) { return /\.(png|jpe?g|gif|webp)$/i.test(fileName); }
@@ -138,6 +83,25 @@ export default function DocumentDetail() {
     } finally {
       setBusy(false);
     }
+  }
+
+  // เช็คก่อนพิมพ์ว่าเนื้อหายาวเกิน 1 หน้า A4 หรือไม่ — เพราะ CSS พิมพ์ตอนนี้ล็อกความสูงพอดี 1 หน้า
+  // (กันปัญหาเดิมที่หน้า 2 โผล่มาเปล่าๆ พร้อมบล็อกลงชื่อ) ถ้าเนื้อหายาวเกินจริง ส่วนที่เกินจะถูกตัดไป
+  // ไม่แสดงตอนพิมพ์ จึงต้องเตือนก่อน ไม่ให้ข้อมูลหายไปเงียบๆ โดยไม่มีใครรู้
+  function handlePrint() {
+    const printArea = document.getElementById('printArea');
+    const sheet = printArea?.querySelector('.a4-page') as HTMLElement | null;
+    if (sheet) {
+      const prevCssText = printArea!.style.cssText;
+      printArea!.style.cssText = 'display:block !important; position:fixed; left:-99999px; top:0; visibility:hidden;';
+      const naturalHeightPx = sheet.scrollHeight;
+      printArea!.style.cssText = prevCssText;
+      const onePageHeightPx = 297 * (96 / 25.4); // ~1122.6px ที่ 96dpi (ค่ามาตรฐานของหน่วย mm ใน CSS)
+      if (naturalHeightPx > onePageHeightPx + 20) {
+        if (!confirm(t('docPrintOverflowWarning'))) return;
+      }
+    }
+    window.print();
   }
 
   async function uploadAttachments(fileList: FileList) {
@@ -222,7 +186,7 @@ export default function DocumentDetail() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-slate-100 dark:bg-slate-800">{t('status_' + doc.status) || doc.status}</span>
-          <button onClick={() => window.print()} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-medium hover:opacity-90" title="พิมพ์ (A4)">
+          <button onClick={handlePrint} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-medium hover:opacity-90" title="พิมพ์ (A4)">
             <Printer size={16} /> {t('docPrint')}
           </button>
         </div>
@@ -230,19 +194,45 @@ export default function DocumentDetail() {
 
       {/* กระดาษที่ใช้พิมพ์จริง — ไม่แสดงบนหน้าจอปกติ (#printArea ถูกซ่อนไว้ด้วย CSS) มีผลเฉพาะตอนสั่งพิมพ์เท่านั้น */}
       {createPortal(
-        <ClassicMemoSheet doc={doc} type={type} history={history} schoolName={schoolName} />,
+        <MemoSheet doc={doc} type={type} history={history} schoolName={schoolName} />,
         document.getElementById('printArea')!
       )}
 
       {/* สรุปข้อมูลแบบย่อบนหน้าจอ */}
       <div className="no-print bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] p-6">
         <div className="space-y-3">
-          {(type?.formSchema || []).map((f: any) => (
-            <div key={f.key} className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3 text-sm">
-              <span className="text-slate-500">{f.label}</span>
-              <span className="sm:col-span-2 font-medium whitespace-pre-wrap break-words">{doc.fields?.[f.key] || '-'}</span>
-            </div>
-          ))}
+          {(type?.formSchema || []).map((f: any) => {
+            const raw = doc.fields?.[f.key];
+            let display: React.ReactNode = raw || '-';
+            if (f.type === 'checkbox') display = raw === 'true' ? `☑ ${t('docCheckboxYes')}` : '☐';
+            else if (f.type === 'table') {
+              const rows: Record<string, string>[] = Array.isArray(raw) ? raw : [];
+              display = rows.length === 0 ? '-' : (
+                <div className="overflow-x-auto -mx-1">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-[var(--color-border)]">
+                        {(f.columns || []).map((c: any) => <th key={c.key} className="text-left px-1 py-1 text-slate-500 font-medium">{c.label}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, ri) => (
+                        <tr key={ri} className="border-b border-[var(--color-border)]/60">
+                          {(f.columns || []).map((c: any) => <td key={c.key} className="px-1 py-1">{row[c.key] || '-'}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            }
+            return (
+              <div key={f.key} className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3 text-sm">
+                <span className="text-slate-500">{f.label}</span>
+                <span className="sm:col-span-2 font-medium whitespace-pre-wrap break-words">{display}</span>
+              </div>
+            );
+          })}
           {doc.dueDate && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3 text-sm">
               <span className="text-slate-500">{t('docDueDate')}</span>
@@ -344,11 +334,47 @@ export default function DocumentDetail() {
             <h3 className="font-medium text-sm">{t('docReturnedTitle')}</h3>
             {doc.officeComment && <p className="text-sm bg-amber-50 dark:bg-amber-950/40 rounded-lg px-3 py-2">{doc.officeComment}</p>}
             <p className="text-xs text-slate-500">{t('docResubmitHint')}</p>
-            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder={t('note') || 'หมายเหตุ (ถ้ามี)'}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-transparent text-sm" rows={2} />
-            <button disabled={busy} onClick={() => act('resubmit')} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-medium hover:opacity-90">
-              <Send size={15} /> {t('docResubmit')}
+            <button onClick={() => navigate(`/documents/${doc.id}/edit`)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-medium hover:opacity-90">
+              <Pencil size={15} /> {t('docEditTitle')}
             </button>
+          </div>
+        )}
+
+        {isCreator && doc.status === 'pending_office_review' && (
+          <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] p-5 space-y-3">
+            <p className="text-xs text-slate-500">{t('docPendingEditHint')}</p>
+            <button onClick={() => navigate(`/documents/${doc.id}/edit`)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800">
+              <Pencil size={15} /> {t('docEditWhilePendingTitle')}
+            </button>
+          </div>
+        )}
+
+        {doc.status === 'rejected' && (
+          <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] p-5 space-y-3">
+            <h3 className="font-medium text-sm">{t('trash')}</h3>
+            {doc.officeComment && <p className="text-sm bg-rose-50 dark:bg-rose-950/40 rounded-lg px-3 py-2">{doc.officeComment}</p>}
+            {(() => {
+              const rejecter = history.find((h: any) => (h.action === 'rejected' || (h.action === 'endorsed')) && doc.rejectedAt && h.timestamp === doc.rejectedAt);
+              const rejecterName = rejecter?.actorName;
+              const daysLeft = doc.rejectedAt ? Math.max(0, 30 - Math.floor((Date.now() - new Date(doc.rejectedAt).getTime()) / 86400000)) : 0;
+              const canRestore = doc.rejectedBy && (doc.rejectedBy === user?.id || user?.role === 'admin') && daysLeft > 0;
+              return (
+                <>
+                  {rejecterName && <p className="text-xs text-slate-500">{t('docTrashedInfo')} {rejecterName}</p>}
+                  <p className="text-xs text-slate-500">{t('docRestoreHint')}</p>
+                  {doc.rejectedBy && daysLeft === 0 && <p className="text-xs text-rose-600">{t('docRestoreExpired')}</p>}
+                  {doc.rejectedBy && daysLeft > 0 && <p className="text-xs text-slate-500">{t('docRestoreDaysLeft')} {daysLeft}</p>}
+                  {canRestore && (
+                    <button disabled={busy} onClick={() => act('restore')}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:opacity-90">
+                      <Undo2 size={15} /> {t('docRestoreButton')}
+                    </button>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -405,32 +431,32 @@ export default function DocumentDetail() {
         {tasks?.some((t: any) => (t.assignedToUserId === user?.id || (t.assignedToDeptId && isHeadOfDept(t.assignedToDeptId))) && t.status !== 'done') && (
           <div className="bg-[var(--color-surface)] rounded-xl border-2 border-[var(--color-primary)]/40 p-5 space-y-3">
             <h3 className="font-medium text-sm">{t('docTasksAssignedTitle')}</h3>
-            {tasks.filter((t: any) => (t.assignedToUserId === user?.id || (t.assignedToDeptId && isHeadOfDept(t.assignedToDeptId))) && t.status !== 'done').map((t: any) => {
-              const dept = t.assignedToDeptId ? departments.find(d => d.id === t.assignedToDeptId) : null;
+            {tasks.filter((task: any) => (task.assignedToUserId === user?.id || (task.assignedToDeptId && isHeadOfDept(task.assignedToDeptId))) && task.status !== 'done').map((task: any) => {
+              const dept = task.assignedToDeptId ? departments.find(d => d.id === task.assignedToDeptId) : null;
               const isHeadOfDept = dept && (dept as any).headUserId === user?.id;
               const hasBroadRights = ['office_head', 'admin', 'director'].includes(user?.role || '');
-              const canDelegate = hasBroadRights || t.assignedToUserId === user?.id || isHeadOfDept;
-              const delegateCandidates = hasBroadRights || !t.assignedToDeptId
+              const canDelegate = hasBroadRights || task.assignedToUserId === user?.id || isHeadOfDept;
+              const delegateCandidates = hasBroadRights || !task.assignedToDeptId
                 ? allUsers.filter(u => u.active && u.id !== user?.id)
-                : allUsers.filter(u => u.active && u.id !== user?.id && (u.departmentIds || []).includes(t.assignedToDeptId));
-              const isCompleting = completingTaskId === t.id;
-              const isDelegating = delegatingTaskId === t.id;
+                : allUsers.filter(u => u.active && u.id !== user?.id && (u.departmentIds || []).includes(task.assignedToDeptId));
+              const isCompleting = completingTaskId === task.id;
+              const isDelegating = delegatingTaskId === task.id;
               return (
-                <div key={t.id} className="border border-[var(--color-border)] rounded-lg px-3 py-2.5 space-y-2">
+                <div key={task.id} className="border border-[var(--color-border)] rounded-lg px-3 py-2.5 space-y-2">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
-                    <span>{t.instructions || 'ไม่มีคำสั่งเพิ่มเติม'} <span className="text-slate-400">({t.status})</span></span>
+                    <span>{task.instructions || 'ไม่มีคำสั่งเพิ่มเติม'} <span className="text-slate-400">({task.status})</span></span>
                     <div className="flex gap-2 shrink-0 flex-wrap">
-                      {t.status === 'pending' && (
-                        <button onClick={() => act('acknowledge', { taskId: t.id })} className="flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-lg bg-amber-500 text-white hover:opacity-90 shadow-sm">
+                      {task.status === 'pending' && (
+                        <button onClick={() => act('acknowledge', { taskId: task.id })} className="flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-lg bg-amber-500 text-white hover:opacity-90 shadow-sm">
                           <UserCheck size={15} />รับทราบแล้ว
                         </button>
                       )}
                       {canDelegate && (
-                        <button onClick={() => { setDelegatingTaskId(isDelegating ? null : t.id); setCompletingTaskId(null); }} className="flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg border border-[var(--color-border)] hover:bg-slate-50 dark:hover:bg-slate-800">
+                        <button onClick={() => { setDelegatingTaskId(isDelegating ? null : task.id); setCompletingTaskId(null); }} className="flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-lg border border-[var(--color-border)] hover:bg-slate-50 dark:hover:bg-slate-800">
                           <Users size={15} />{t('docDelegateWithinDept')}
                         </button>
                       )}
-                      <button onClick={() => { setCompletingTaskId(isCompleting ? null : t.id); setCompleteFiles([]); setCompleteNote(''); setDelegatingTaskId(null); }} className="flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-lg bg-emerald-600 text-white hover:opacity-90 shadow-sm">
+                      <button onClick={() => { setCompletingTaskId(isCompleting ? null : task.id); setCompleteFiles([]); setCompleteNote(''); setDelegatingTaskId(null); }} className="flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-lg bg-emerald-600 text-white hover:opacity-90 shadow-sm">
                         <CheckCircle size={15} />{t('docComplete')}
                       </button>
                     </div>
@@ -438,13 +464,13 @@ export default function DocumentDetail() {
 
                   {isDelegating && (
                     <div className="bg-slate-50 dark:bg-slate-800/40 rounded-lg p-3 space-y-2">
-                      <p className="text-xs text-slate-500">{t('docChooseDelegateTarget')} {!hasBroadRights && t.assignedToDeptId && '(เฉพาะบุคลากรในสังกัดเดียวกัน)'}</p>
+                      <p className="text-xs text-slate-500">{t('docChooseDelegateTarget')} {!hasBroadRights && task.assignedToDeptId && '(เฉพาะบุคลากรในสังกัดเดียวกัน)'}</p>
                       <PersonSelect people={delegateCandidates.map((u: any) => ({ id: u.id, fullName: u.fullName, position: u.position }))}
                         value={delegateTargetId} onChange={setDelegateTargetId} placeholder="-- เลือกผู้รับมอบหมาย --" />
                       <textarea value={delegateNote} onChange={e => setDelegateNote(e.target.value)} placeholder={t('instructionsOptional') || 'คำสั่ง/หมายเหตุ (ถ้ามี)'}
                         className="w-full px-2 py-1.5 rounded-lg border border-[var(--color-border)] bg-transparent text-sm" rows={2} />
                       <button disabled={!delegateTargetId} onClick={async () => {
-                        await act('delegate', { taskId: t.id, targetUserId: delegateTargetId, note: delegateNote });
+                        await act('delegate', { taskId: task.id, targetUserId: delegateTargetId, note: delegateNote });
                         setDelegatingTaskId(null); setDelegateTargetId(''); setDelegateNote('');
                       }} className="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] text-white text-xs font-medium disabled:opacity-50">{t('docConfirmForward')}</button>
                     </div>
@@ -459,9 +485,9 @@ export default function DocumentDetail() {
                       <button disabled={!completeNote.trim() || completeBusy} onClick={async () => {
                         setCompleteBusy(true);
                         try {
-                          await act('complete', { taskId: t.id, note: completeNote });
+                          await act('complete', { taskId: task.id, note: completeNote });
                           if (completeFiles.length) {
-                            const { failed } = await uploadPendingFiles(api, id!, completeFiles, t.id);
+                            const { failed } = await uploadPendingFiles(api, id!, completeFiles, task.id);
                             if (failed.length) alert(`บันทึกเสร็จสิ้นแล้ว แต่แนบไฟล์ไม่สำเร็จ ${failed.length} ไฟล์: ${failed.map(f => f.name).join(', ')}`);
                           }
                           setCompletingTaskId(null); setCompleteNote(''); setCompleteFiles([]);

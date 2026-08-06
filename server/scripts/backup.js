@@ -11,7 +11,9 @@ const ROOT = path.join(__dirname, '..');
 const DATA_DIR = path.join(ROOT, 'data');
 const UPLOAD_DIR = path.join(ROOT, 'uploads');
 const BACKUP_ROOT = path.join(ROOT, 'backups');
-const KEEP_LAST_N = parseInt(process.env.BACKUP_KEEP || '60', 10); // เก็บย้อนหลังกี่ชุดบนเครื่องนี้ (ค่าเริ่มต้น 60 วัน — นับเฉพาะจำนวนครั้งที่สำรอง ถ้ากด "สำรองตอนนี้" เองบ่อยๆ ในวันเดียวจะหมดอายุเร็วกว่า 60 วันจริง) ตัวเลขนี้ไม่เกี่ยวกับ NAS เลย ฝั่ง NAS เก็บแยกต่างหากไม่ถูกลบตามนี้
+// เดิมเก็บแบบนับจำนวนไฟล์ (60 ชุดล่าสุด) เปลี่ยนเป็นนับอายุแทน — เก็บชุดสำรองไว้ 1 ปี (365 วัน) แล้วค่อยๆ ลบออกจากเครื่องนี้เมื่อเก่าเกินกำหนด
+// ปรับได้ผ่าน env BACKUP_KEEP_DAYS ตัวเลขนี้ไม่เกี่ยวกับ NAS เลย ฝั่ง NAS เก็บแยกต่างหากไม่ถูกลบตามนี้ (ดู DELETE /api/admin/nas-backups/:name)
+const KEEP_DAYS = parseInt(process.env.BACKUP_KEEP_DAYS || '365', 10);
 
 function timestamp() {
   const d = new Date();
@@ -32,13 +34,39 @@ function copyRecursive(src, dest) {
   }
 }
 
+// เดิม copyRecursive คัดลอกไฟล์จริงทุกไบต์ทุกครั้ง ปัญหาคือโฟลเดอร์ uploads/ มีแต่ไฟล์ที่เพิ่มขึ้นเรื่อยๆ (อัปโหลดแล้วไม่มีการแก้ไขซ้ำ)
+// พอสำรองข้อมูลทุกคืน แต่ละชุดจะมีสำเนาไฟล์เดิมซ้ำเต็มจำนวนทุกชุด (10 ไฟล์วันนี้ พรุ่งนี้ backup ใหม่ก็คัดลอกซ้ำอีก 10 ไฟล์เดิม)
+// พื้นที่ดิสก์เลยเพิ่มแบบทวีคูณตามจำนวนชุดสำรอง ทั้งที่เนื้อไฟล์เหมือนเดิมทุกตัว
+// แก้โดยใช้ "hard link" แทนการคัดลอกไบต์จริงสำหรับไฟล์ที่ไม่เคยเปลี่ยน (ไฟล์แนบ/รูปถ่ายเวรเป็นไฟล์ที่เขียนครั้งเดียวไม่แก้ไขซ้ำ
+// จึงปลอดภัยที่จะ link แทนคัดลอกเสมอ) — hard link ใช้พื้นที่ดิสก์เพิ่มขึ้นแทบเป็นศูนย์ต่อไฟล์ที่ไม่เปลี่ยน เพราะชี้ไปที่ข้อมูลก้อนเดียวกันบนดิสก์
+// (ต้องอยู่ไดรฟ์เดียวกัน ซึ่งกรณีนี้ทั้ง uploads/ และ backups/ อยู่ใต้ ROOT เดียวกันเสมอ จึงใช้ได้ปกติ)
+// ถ้า link ไม่ได้ด้วยเหตุผลใดก็ตาม (เช่น อยู่คนละไดรฟ์ หรือระบบไฟล์ไม่รองรับ) จะ fallback ไปคัดลอกไบต์จริงแทนโดยอัตโนมัติ ไม่ทำให้ backup ล้มเหลว
+function linkOrCopyRecursive(src, dest) {
+  if (!fs.existsSync(src)) return;
+  const stat = fs.statSync(src);
+  if (stat.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src)) {
+      linkOrCopyRecursive(path.join(src, entry), path.join(dest, entry));
+    }
+  } else {
+    try {
+      fs.linkSync(src, dest);
+    } catch (e) {
+      fs.copyFileSync(src, dest); // fallback: คนละไดรฟ์/ระบบไฟล์ไม่รองรับ hard link
+    }
+  }
+}
+
 function pruneOldBackups() {
   if (!fs.existsSync(BACKUP_ROOT)) return;
+  const cutoff = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
   const entries = fs.readdirSync(BACKUP_ROOT)
     .filter(name => name.startsWith('backup-'))
     .map(name => ({ name, full: path.join(BACKUP_ROOT, name), time: fs.statSync(path.join(BACKUP_ROOT, name)).mtimeMs }))
     .sort((a, b) => b.time - a.time);
-  const toRemove = entries.slice(KEEP_LAST_N);
+  // ลบเฉพาะชุดที่เก่าเกิน KEEP_DAYS (ค่าเริ่มต้น 1 ปี) — ไม่ใช่นับจำนวนไฟล์อีกต่อไป
+  const toRemove = entries.filter(e => e.time < cutoff);
   for (const e of toRemove) {
     fs.rmSync(e.full, { recursive: true, force: true });
   }
@@ -54,8 +82,8 @@ function runBackup() {
     const db = require('../db/sqliteStore');
     db._raw.pragma('wal_checkpoint(FULL)');
   } catch (e) { /* ถ้า db ยังไม่ถูกเรียกใช้งาน ก็ข้ามได้ ไม่กระทบ */ }
-  copyRecursive(DATA_DIR, path.join(dest, 'data'));
-  copyRecursive(UPLOAD_DIR, path.join(dest, 'uploads'));
+  copyRecursive(DATA_DIR, path.join(dest, 'data')); // data/ (ฐานข้อมูล) เปลี่ยนบ่อย ต้องคัดลอกไบต์จริงเสมอเพื่อให้ได้สแนปช็อต ณ เวลานั้นจริงๆ
+  linkOrCopyRecursive(UPLOAD_DIR, path.join(dest, 'uploads')); // uploads/ (ไฟล์แนบ/รูปเวร) เป็นไฟล์ที่เขียนครั้งเดียวไม่แก้ไขซ้ำ ใช้ hard link แทนคัดลอกซ้ำได้ ประหยัดพื้นที่มาก
   const pruneResult = pruneOldBackups();
   let nasNote = '';
   const nasResult = syncLatestToNas(dest);

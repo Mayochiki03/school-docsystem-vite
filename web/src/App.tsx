@@ -4,11 +4,13 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { I18nProvider } from './context/I18nContext';
 import Layout from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import DocumentList from './pages/documents/DocumentList';
 import DocumentCreate from './pages/documents/DocumentCreate';
 import DocumentDetail from './pages/documents/DocumentDetail';
+import DocumentEdit from './pages/documents/DocumentEdit';
 import Notifications from './pages/Notifications';
 import Duty from './pages/Duty';
 import Guard from './pages/Guard';
@@ -26,7 +28,9 @@ function Private({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">กำลังโหลด...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  return <Layout>{children}</Layout>;
+  // ครอบ ErrorBoundary รอบเนื้อหาหน้า (ไม่ครอบ Layout) — ถ้าหน้าใดพังระหว่างแสดงผล แถบเมนู/นำทาง
+  // ยังใช้งานได้ปกติ ผู้ใช้กดไปหน้าอื่นต่อได้เลย ไม่ต้องเจอจอขาวเปล่าที่กดอะไรไม่ได้เลย
+  return <Layout><ErrorBoundary key={typeof window !== 'undefined' ? window.location.pathname : undefined}>{children}</ErrorBoundary></Layout>;
 }
 
 export default function App() {
@@ -45,6 +49,7 @@ export default function App() {
               <Route path="/documents/all" element={<Private><DocumentList box="all" titleKey="documents" /></Private>} />
               <Route path="/documents/trash" element={<Private><DocumentList box="trash" titleKey="trash" /></Private>} />
               <Route path="/documents/:id" element={<Private><DocumentDetail /></Private>} />
+              <Route path="/documents/:id/edit" element={<Private><DocumentEdit /></Private>} />
               <Route path="/notifications" element={<Private><Notifications /></Private>} />
               <Route path="/duty" element={<Private><Duty /></Private>} />
               <Route path="/guard" element={<Private><Guard /></Private>} />

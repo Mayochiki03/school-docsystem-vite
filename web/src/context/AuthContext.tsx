@@ -32,6 +32,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { refresh(); }, []);
 
+  // มือถือเปิดแอพผ่าน push notification หรือสลับกลับมาจาก background บ่อยๆ ตอนที่ session/เน็ตยังไม่พร้อมเต็มที่
+  // ตัวนี้ช่วยให้แอพเช็คสถานะล็อกอินใหม่ทันทีที่กลับมาอยู่หน้าจอ แทนที่จะค้างสถานะเก่าที่อาจหลุดไปแล้วเงียบๆ
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible') refresh();
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onVisible);
+    };
+  }, []);
+
   async function login(username: string, password: string) {
     const data = await api.post('/api/login', { username, password });
     setUser(data.user);

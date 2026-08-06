@@ -10,6 +10,12 @@
 //  - ไฟล์เดียวสำรองข้อมูลง่าย (copy ไฟล์ไป NAS ได้ตรงๆ)
 //  - เหมาะกับสเปกเครื่องที่จำกัดและจำนวนผู้ใช้งานระดับสำนักงานโรงเรียน (ไม่ถึงหลักพันคนพร้อมกัน)
 //  - ย้ายไป Postgres/SQL Server ในอนาคตได้ไม่ยาก เพราะ schema เป็นมาตรฐาน (ดู db/schema.sql อ้างอิง)
+//
+// รองรับ reopen() แบบ hot-reload — ใช้ตอนกู้คืนข้อมูลจากไฟล์สำรอง (ดู server.js: POST /api/admin/backups/restore)
+// เดิมตอนกู้คืนต้องปิด connection แล้วสั่ง process.exit() ให้ NSSM/PM2 รีสตาร์ทเอง ซึ่งพึ่งพา process manager
+// ภายนอกและใช้เวลา 5-10 วิ (บนเครื่อง dev ที่รันด้วย `npm run dev` ตรงๆ ไม่มี process manager คอย restart ให้
+// เลย โปรเซสจะตายค้างไปเฉยๆ) ตอนนี้เปลี่ยนมาปิด+เปิด connection ใหม่ในโปรเซสเดียวกันแทน ไม่ต้อง restart
+// ทั้งโปรเซสอีกต่อไป ทำงานเหมือนกันทั้ง dev และ production
 
 const fs = require('fs');
 const path = require('path');
@@ -19,9 +25,6 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'database.db');
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
 
 const COLLECTIONS = [
   'users', 'departments', 'documentTypes', 'documents',
@@ -31,17 +34,26 @@ const COLLECTIONS = [
   'featureToggles', 'importLogs', 'pushSubscriptions'
 ];
 
-for (const name of COLLECTIONS) {
-  db.exec(`CREATE TABLE IF NOT EXISTS "${name}" (
-    id TEXT PRIMARY KEY,
-    data TEXT NOT NULL,
-    createdAtIdx TEXT
-  )`);
+let db; // เปลี่ยนจาก const เป็น let เพราะต้อง reassign ได้ตอน reopen()
+
+function openDb() {
+  const conn = new Database(DB_PATH);
+  conn.pragma('journal_mode = WAL');
+  conn.pragma('foreign_keys = ON');
+  for (const name of COLLECTIONS) {
+    conn.exec(`CREATE TABLE IF NOT EXISTS "${name}" (
+      id TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      createdAtIdx TEXT
+    )`);
+  }
+  conn.exec(`CREATE INDEX IF NOT EXISTS idx_documents_created ON documents(createdAtIdx)`);
+  conn.exec(`CREATE INDEX IF NOT EXISTS idx_history_created ON history(createdAtIdx)`);
+  conn.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(createdAtIdx)`);
+  return conn;
 }
-// ดัชนีช่วยให้ query ตามเวลาสร้างเร็วขึ้น (เอกสาร/ประวัติ/แจ้งเตือน มักเรียงตามเวลา)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_created ON documents(createdAtIdx)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_history_created ON history(createdAtIdx)`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(createdAtIdx)`);
+
+db = openDb();
 
 let idSeq = Date.now() % 1000000;
 function genId(prefix) {
@@ -94,6 +106,18 @@ class SqliteCollection {
 
 const store = { _raw: db };
 for (const c of COLLECTIONS) store[c] = new SqliteCollection(c);
+
+// เปิด connection ใหม่แทนของเดิม (ใช้ตอนไฟล์ database.db ถูกสลับจากภายนอก เช่นกู้คืนจากไฟล์สำรอง)
+// mutate ตัว store เดิมในที่ (ไม่สร้าง object ใหม่ทั้งก้อน) เพราะ server.js/routes-extra.js ถือ reference
+// ของ store ตัวเดิมไว้ตั้งแต่ require() ครั้งแรก ต้อง property lookup สดใหม่ทุกครั้ง (db.users.xxx()) ถึงจะเห็น
+// connection ใหม่ — เช็คแล้วว่าทั้งระบบเรียกผ่าน dot-access แบบนี้ตลอด ไม่มีที่ไหน destructure เก็บ reference ค้างไว้
+store.reopen = function reopen() {
+  try { db.close(); } catch (e) { /* ปิดไปแล้วก็ได้ ไม่เป็นไร */ }
+  db = openDb();
+  store._raw = db;
+  for (const c of COLLECTIONS) store[c] = new SqliteCollection(c);
+  idSeq = Date.now() % 1000000; // กัน id ชนกันข้ามชุดข้อมูล (ชุดใหม่อาจมี id ที่สร้างจาก idSeq ช่วงอื่น)
+};
 
 // ---------- Migration จาก JSON เดิม (data_seed/*.json) เข้า SQLite ครั้งแรกที่รัน ----------
 function migrateFromJsonSeedIfEmpty() {

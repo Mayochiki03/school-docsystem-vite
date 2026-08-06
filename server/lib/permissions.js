@@ -10,12 +10,15 @@ function canView(user, doc) {
   if (doc.createdBy === user.id) return true;
 
   const myTasks = db.tasks.find(t => t.documentId === doc.id);
+  const userDeptIds = user.departmentIds || [];
   for (const t of myTasks) {
     if (t.assignedToUserId === user.id) return true;
-    // สำคัญ: งานที่ส่งถึง "แผนก" ให้เห็นเฉพาะหัวหน้าแผนกเท่านั้น ไม่ใช่สมาชิกทุกคนในแผนก
-    // (หัวหน้าแผนกเป็นผู้ตัดสินใจว่าจะมอบหมายต่อให้ใครในแผนกอีกที ผ่านการ "มอบหมายงานต่อในสังกัด"
-    // ซึ่งตอนนั้นจะสร้าง assignedToUserId ให้บุคคลนั้นโดยเฉพาะ แล้วเขาถึงจะเห็นได้)
-    if (t.assignedToDeptId && isDeptHeadOf(user, t.assignedToDeptId)) return true;
+    // แก้บั๊กสำคัญ: เดิมตรงนี้เช็คเฉพาะ "หัวหน้าแผนก" เท่านั้น (isDeptHeadOf) แต่ endpoint อื่นที่เกี่ยวกับงานเดียวกัน
+    // (acknowledge, complete, การนับ badge ในหน้า inbox/notifications) ล้วนอนุญาตให้ "สมาชิกทุกคนในแผนก" ทำได้
+    // อยู่แล้ว ผลคือสมาชิกแผนก (หรือแม้แต่หัวหน้าแผนกเอง ถ้า setup หัวหน้าแผนกไม่ตรง) เห็นงานขึ้นในรายการ/แจ้งเตือน
+    // แต่พอกดเข้าไปดูเอกสารจริงกลับเข้าไม่ได้ (หน้าเปล่า/โหลดไม่ขึ้น) เพราะ canView บล็อกไว้ก่อนจะถึงจุดนั้น —
+    // แก้ให้ตรงกับที่อื่นทั้งระบบ: สมาชิกแผนกที่ถูกมอบหมายงานถึง เห็นเอกสารได้ทุกคน ไม่ใช่แค่หัวหน้าแผนก
+    if (t.assignedToDeptId && (userDeptIds.includes(t.assignedToDeptId) || isDeptHeadOf(user, t.assignedToDeptId))) return true;
   }
   return false;
 }

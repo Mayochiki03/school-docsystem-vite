@@ -1,244 +1,990 @@
 [
-    {
-        "active": true,
-        "name": "หนังสือเข้าจากภายนอก",
-        "category": "incoming",
-        "recipientMode": "single",
-        "requiresScan": true,
-        "formSchema": [
-            {
-                "key": "fromOrg",
-                "label": "จากหน่วยงาน/บุคคล",
-                "type": "text",
-                "required": true
-            },
-            {
-                "key": "refNumber",
-                "label": "เลขที่หนังสือต้นทาง",
-                "type": "text",
-                "required": false
-            },
-            {
-                "key": "refDate",
-                "label": "วันที่หนังสือต้นทาง",
-                "type": "date",
-                "required": false
-            },
-            {
-                "key": "summary",
-                "label": "สรุปเรื่อง",
-                "type": "textarea",
-                "required": true
-            }
+  {
+    "active": true,
+    "name": "หนังสือเข้าจากภายนอก",
+    "category": "incoming",
+    "recipientMode": "single",
+    "requiresScan": true,
+    "formSchema": [
+      {
+        "key": "fromOrg",
+        "label": "จากหน่วยงาน/บุคคล",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "refNumber",
+        "label": "เลขที่หนังสือต้นทาง",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "refDate",
+        "label": "วันที่หนังสือต้นทาง",
+        "type": "date",
+        "required": false
+      },
+      {
+        "key": "summary",
+        "label": "สรุปเรื่อง",
+        "type": "textarea",
+        "required": true
+      }
+    ],
+    "id": "doc_1bjqwhga",
+    "headerTitle": "บันทึกรับหนังสือ"
+  },
+  {
+    "active": true,
+    "name": "หนังสือออกภายนอก",
+    "category": "outgoing",
+    "recipientMode": "single",
+    "formSchema": [
+      {
+        "key": "toOrg",
+        "label": "เรียน (หน่วยงาน/บุคคลปลายทาง)",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "content",
+        "label": "เนื้อหา",
+        "type": "textarea",
+        "required": true
+      }
+    ],
+    "id": "doc_1bjrn810",
+    "headerTitle": "หนังสือออก"
+  },
+  {
+    "active": true,
+    "name": "บันทึกข้อความ (ถึง ผอ.)",
+    "category": "memo_to_director",
+    "recipientMode": "single",
+    "formSchema": [
+      {
+        "key": "to",
+        "label": "เรียน",
+        "type": "text",
+        "required": true,
+        "default": "ผู้อำนวยการโรงเรียน"
+      },
+      {
+        "key": "content",
+        "label": "เนื้อหา/รายละเอียด",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "key": "signerName",
+        "label": "ลงชื่อ",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "signerPosition",
+        "label": "ตำแหน่ง",
+        "type": "text",
+        "required": true
+      }
+    ],
+    "id": "doc_1bjs2x82",
+    "headerTitle": "บันทึกข้อความ"
+  },
+  {
+    "active": true,
+    "name": "บันทึกข้อความถึงครูทั้งโรงเรียน",
+    "category": "memo_all",
+    "recipientMode": "all",
+    "formSchema": [
+      {
+        "key": "to",
+        "label": "เรียน",
+        "type": "text",
+        "required": true,
+        "default": "คณะครูทุกท่าน"
+      },
+      {
+        "key": "content",
+        "label": "เนื้อหา",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "key": "signerName",
+        "label": "ลงชื่อ",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "signerPosition",
+        "label": "ตำแหน่ง",
+        "type": "text",
+        "required": true
+      }
+    ],
+    "id": "doc_1bjtz702",
+    "headerTitle": "บันทึกข้อความ"
+  },
+  {
+    "active": true,
+    "name": "บันทึกข้อความถึงครูบางคน",
+    "category": "memo_some",
+    "recipientMode": "selected",
+    "formSchema": [
+      {
+        "key": "content",
+        "label": "เนื้อหา",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "key": "signerName",
+        "label": "ลงชื่อ",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "signerPosition",
+        "label": "ตำแหน่ง",
+        "type": "text",
+        "required": true
+      }
+    ],
+    "id": "doc_1bju67ms",
+    "headerTitle": "บันทึกข้อความ"
+  },
+  {
+    "active": true,
+    "name": "ประกาศโรงเรียน",
+    "category": "announcement",
+    "recipientMode": "all",
+    "formSchema": [
+      {
+        "key": "content",
+        "label": "เนื้อหาประกาศ",
+        "type": "textarea",
+        "required": true
+      }
+    ],
+    "id": "doc_1bjv3076",
+    "headerTitle": "ประกาศ"
+  },
+  {
+    "active": true,
+    "name": "คำสั่งโรงเรียน (ทุกคน)",
+    "category": "order_all",
+    "recipientMode": "all",
+    "formSchema": [
+      {
+        "key": "content",
+        "label": "เนื้อหาคำสั่ง",
+        "type": "textarea",
+        "required": true
+      }
+    ],
+    "id": "doc_1bjwq9lz",
+    "headerTitle": "คำสั่ง"
+  },
+  {
+    "active": true,
+    "name": "คำสั่งโรงเรียน (เฉพาะบางคน)",
+    "category": "order_some",
+    "recipientMode": "selected",
+    "formSchema": [
+      {
+        "key": "content",
+        "label": "เนื้อหาคำสั่ง",
+        "type": "textarea",
+        "required": true
+      }
+    ],
+    "id": "doc_1bjxlvzg",
+    "headerTitle": "คำสั่ง"
+  },
+  {
+    "active": true,
+    "name": "ใบลา",
+    "category": "leave",
+    "recipientMode": "single",
+    "formSchema": [
+      {
+        "key": "leaveType",
+        "label": "ประเภทการลา",
+        "type": "select",
+        "options": [
+          "ลาป่วย",
+          "ลากิจ",
+          "ลาพักผ่อน"
         ],
-        "id": "doc_1bjqwhga",
-        "headerTitle": "บันทึกรับหนังสือ"
-    },
-    {
-        "active": true,
-        "name": "หนังสือออกภายนอก",
-        "category": "outgoing",
-        "recipientMode": "single",
-        "formSchema": [
-            {
-                "key": "toOrg",
-                "label": "เรียน (หน่วยงาน/บุคคลปลายทาง)",
-                "type": "text",
-                "required": true
-            },
-            {
-                "key": "content",
-                "label": "เนื้อหา",
-                "type": "textarea",
-                "required": true
-            }
+        "required": true
+      },
+      {
+        "key": "startDate",
+        "label": "ตั้งแต่วันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "endDate",
+        "label": "ถึงวันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "reason",
+        "label": "เหตุผล",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "key": "subjectTaught",
+        "label": "สอนวิชา",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "gradeLevel",
+        "label": "ระดับชั้น",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "stayAddress",
+        "label": "ระหว่างลาพักอาศัยอยู่ที่ (บ้านเลขที่/ที่อยู่)",
+        "type": "textarea",
+        "required": false
+      },
+      {
+        "key": "contactPhone",
+        "label": "เบอร์โทรศัพท์ที่ติดต่อได้",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "sickLeaveUsedDays",
+        "label": "สถิติลาป่วยมาแล้วในปีการศึกษานี้ (วัน)",
+        "type": "number",
+        "required": false
+      },
+      {
+        "key": "personalLeaveUsedDays",
+        "label": "สถิติลากิจมาแล้วในปีการศึกษานี้ (วัน)",
+        "type": "number",
+        "required": false
+      }
+    ],
+    "id": "doc_1bjyokkg",
+    "headerTitle": "บันทึกข้อความ"
+  },
+  {
+    "active": true,
+    "name": "แบบขอใช้รถยนต์",
+    "category": "vehicle_request",
+    "recipientMode": "single",
+    "headerTitle": "แบบขอใช้รถยนต์",
+    "formSchema": [
+      {
+        "key": "to",
+        "label": "เรียน",
+        "type": "text",
+        "required": true,
+        "default": "ผู้อำนวยการโรงเรียนศรีนครมูลนิธิ"
+      },
+      {
+        "key": "purpose",
+        "label": "มีความประสงค์ขอใช้รถยนต์ เพื่อ",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "key": "destination",
+        "label": "สถานที่ไป",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "useDate",
+        "label": "ในวันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "timeFrom",
+        "label": "ตั้งแต่เวลา",
+        "type": "time",
+        "required": false
+      },
+      {
+        "key": "timeTo",
+        "label": "ถึงเวลา",
+        "type": "time",
+        "required": false
+      },
+      {
+        "key": "outOfProvinceFrom",
+        "label": "กรณีไปต่างจังหวัด ตั้งแต่วันที่",
+        "type": "date",
+        "required": false
+      },
+      {
+        "key": "outOfProvinceTo",
+        "label": "ถึงวันที่",
+        "type": "date",
+        "required": false
+      },
+      {
+        "key": "remark",
+        "label": "หมายเหตุ",
+        "type": "textarea",
+        "required": false
+      }
+    ],
+    "id": "doc_mkiikejb"
+  },
+  {
+    "active": true,
+    "name": "ใบตรวจรับวัสดุ",
+    "category": "material_receipt",
+    "recipientMode": "single",
+    "headerTitle": "ใบตรวจรับวัสดุ",
+    "formSchema": [
+      {
+        "key": "approvalRefNumber",
+        "label": "หนังสือขออนุมัติที่ พศ.",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "approvalRefDate",
+        "label": "ลงวันที่",
+        "type": "date",
+        "required": false
+      },
+      {
+        "key": "projectActivity",
+        "label": "ในกิจกรรม/โครงการ",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "items",
+        "label": "รายการที่ตรวจรับ",
+        "type": "table",
+        "required": true,
+        "columns": [
+          {
+            "key": "name",
+            "label": "รายการ",
+            "type": "text"
+          },
+          {
+            "key": "qty",
+            "label": "จำนวน (รายการ)",
+            "type": "number"
+          },
+          {
+            "key": "amount",
+            "label": "จำนวนเงิน",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "key": "committee1",
+        "label": "ประธานกรรมการ",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "committee2",
+        "label": "กรรมการ (คนที่ 2)",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "committee3",
+        "label": "กรรมการ (คนที่ 3)",
+        "type": "text",
+        "required": false
+      }
+    ],
+    "id": "doc_tffz3ezj"
+  },
+  {
+    "active": true,
+    "name": "ใบขอจัดซื้อ/จัดจ้าง",
+    "category": "purchase_request",
+    "recipientMode": "single",
+    "headerTitle": "ใบขอจัดซื้อ/จัดจ้าง",
+    "formSchema": [
+      {
+        "key": "to",
+        "label": "เรียน",
+        "type": "text",
+        "required": true,
+        "default": "ผู้อำนวยการโรงเรียนศรีนครมูลนิธิ"
+      },
+      {
+        "key": "projectActivity",
+        "label": "ขอจัดซื้อ/จัดจ้างตามโครงการ/กิจกรรม",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "items",
+        "label": "รายการที่ขอจัดซื้อ/จัดจ้าง",
+        "type": "table",
+        "required": true,
+        "columns": [
+          {
+            "key": "name",
+            "label": "รายการ",
+            "type": "text"
+          },
+          {
+            "key": "qty",
+            "label": "จำนวน",
+            "type": "number"
+          },
+          {
+            "key": "unitPrice",
+            "label": "ราคา/หน่วย",
+            "type": "number"
+          },
+          {
+            "key": "total",
+            "label": "รวมเงิน",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "key": "reason",
+        "label": "เหตุผลในการขอจัดซื้อ",
+        "type": "textarea",
+        "required": false
+      },
+      {
+        "key": "committee1",
+        "label": "กรรมการตรวจรับ คนที่ 1",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "committee2",
+        "label": "กรรมการตรวจรับ คนที่ 2",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "committee3",
+        "label": "กรรมการตรวจรับ คนที่ 3",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "budgetSource",
+        "label": "เบิกจากงบ (ตามโครงการที่ตั้งไว้)",
+        "type": "text",
+        "required": false
+      }
+    ],
+    "id": "doc_72j3b3d6"
+  },
+  {
+    "active": true,
+    "name": "แบบฟอร์มบันทึกการเปลี่ยนเวร",
+    "category": "duty_shift_change",
+    "recipientMode": "single",
+    "headerTitle": "แบบฟอร์มบันทึกการเปลี่ยนเวร",
+    "formSchema": [
+      {
+        "key": "to",
+        "label": "เรียน",
+        "type": "text",
+        "required": true,
+        "default": "ผู้อำนวยการโรงเรียนศรีนครมูลนิธิ"
+      },
+      {
+        "key": "contactPhone",
+        "label": "เบอร์โทรศัพท์ที่ติดต่อได้",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "dutyDateFrom",
+        "label": "ได้รับมอบหมายให้ปฏิบัติหน้าที่เวรระหว่างวันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "dutyDateTo",
+        "label": "ถึงวันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "reason",
+        "label": "แต่ทั้งนี้ไม่สามารถมาปฏิบัติหน้าที่ได้ เนื่องจาก",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "key": "swapWithName",
+        "label": "จึงใคร่ขออนุญาตเปลี่ยนเวรกับ (ชื่อ)",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "swapWithPhone",
+        "label": "เบอร์โทรศัพท์ที่ติดต่อได้ (ผู้รับเปลี่ยนเวร)",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "swapDateFrom",
+        "label": "ซึ่งปฏิบัติหน้าที่เวรระหว่างวันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "swapDateTo",
+        "label": "ถึงวันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "originalPairName",
+        "label": "เดิมอยู่เวรคู่กับ (ชื่อ) — ผู้ขอเปลี่ยนเวร",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "newPairName",
+        "label": "เดิมอยู่เวรคู่กับ (ชื่อ) — ผู้ให้เปลี่ยนเวร",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "supervisorComment",
+        "label": "ความเห็นของผู้บังคับบัญชา",
+        "type": "textarea",
+        "required": false
+      }
+    ],
+    "id": "doc_0r7lrr6l"
+  },
+  {
+    "active": true,
+    "name": "ใบเบิกเงินสวัสดิการเกี่ยวกับการศึกษาบุตร (กท.16 ช.)",
+    "category": "edu_welfare_child",
+    "recipientMode": "single",
+    "headerTitle": "ใบเบิกเงินสวัสดิการเกี่ยวกับการศึกษาบุตร",
+    "formSchema": [
+      {
+        "key": "idCardNumber",
+        "label": "เลขประจำตัวประชาชน",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "applicantType",
+        "label": "ข้าพเจ้าเป็น",
+        "type": "radio",
+        "options": [
+          "ผู้อำนวยการ",
+          "ครู",
+          "บุคลากรทางการศึกษา"
         ],
-        "id": "doc_1bjrn810",
-        "headerTitle": "หนังสือออก"
-    },
-    {
-        "active": true,
-        "name": "บันทึกข้อความ (ถึง ผอ.)",
-        "category": "memo_to_director",
-        "recipientMode": "single",
-        "formSchema": [
-            {
-                "key": "to",
-                "label": "เรียน",
-                "type": "text",
-                "required": true,
-                "default": "ผู้อำนวยการโรงเรียน"
-            },
-            {
-                "key": "content",
-                "label": "เนื้อหา/รายละเอียด",
-                "type": "textarea",
-                "required": true
-            },
-            {
-                "key": "signerName",
-                "label": "ลงชื่อ",
-                "type": "text",
-                "required": true
-            },
-            {
-                "key": "signerPosition",
-                "label": "ตำแหน่ง",
-                "type": "text",
-                "required": true
-            }
+        "required": true
+      },
+      {
+        "key": "appointDate",
+        "label": "บรรจุแต่งตั้งเมื่อวันที่",
+        "type": "date",
+        "required": false
+      },
+      {
+        "key": "spouseName",
+        "label": "คู่สมรสชื่อ",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "spouseRight",
+        "label": "การรับรองสิทธิคู่สมรส",
+        "type": "radio",
+        "options": [
+          "คู่สมรสมีสิทธิได้รับเงินค่าการศึกษาบุตรจากหน่วยงานอื่นก่อนแล้ว",
+          "คู่สมรสไม่มีสิทธิได้รับเงินค่าการศึกษาบุตรจากหน่วยงานอื่น"
         ],
-        "id": "doc_1bjs2x82",
-        "headerTitle": "บันทึกข้อความ"
-    },
-    {
-        "active": true,
-        "name": "บันทึกข้อความถึงครูทั้งโรงเรียน",
-        "category": "memo_all",
-        "recipientMode": "all",
-        "formSchema": [
-            {
-                "key": "to",
-                "label": "เรียน",
-                "type": "text",
-                "required": true,
-                "default": "คณะครูทุกท่าน"
-            },
-            {
-                "key": "content",
-                "label": "เนื้อหา",
-                "type": "textarea",
-                "required": true
-            },
-            {
-                "key": "signerName",
-                "label": "ลงชื่อ",
-                "type": "text",
-                "required": true
-            },
-            {
-                "key": "signerPosition",
-                "label": "ตำแหน่ง",
-                "type": "text",
-                "required": true
-            }
+        "required": true
+      },
+      {
+        "key": "children",
+        "label": "รายชื่อบุตรที่ขอเบิก",
+        "type": "table",
+        "required": true,
+        "columns": [
+          {
+            "key": "name",
+            "label": "ชื่อ - สกุล",
+            "type": "text"
+          },
+          {
+            "key": "birthDate",
+            "label": "วัน เดือน ปีเกิด",
+            "type": "text"
+          },
+          {
+            "key": "school",
+            "label": "สถานศึกษา / ชั้น",
+            "type": "text"
+          },
+          {
+            "key": "amount",
+            "label": "จำนวนเงิน",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "key": "totalAmount",
+        "label": "รวมเป็นเงิน (บาท)",
+        "type": "number",
+        "required": true
+      },
+      {
+        "key": "bankAccount",
+        "label": "เลขที่บัญชี (ธนาคารกรุงไทย)",
+        "type": "text",
+        "required": false
+      }
+    ],
+    "id": "doc_7shh4k0h"
+  },
+  {
+    "active": true,
+    "name": "ใบเบิกเงินสวัสดิการค่ารักษาพยาบาล (กท.4 ช.)",
+    "category": "medical_welfare",
+    "recipientMode": "single",
+    "headerTitle": "ใบเบิกเงินสวัสดิการค่ารักษาพยาบาล",
+    "formSchema": [
+      {
+        "key": "idCardNumber",
+        "label": "เลขประจำตัวประชาชน",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "applicantType",
+        "label": "ข้าพเจ้าเป็น",
+        "type": "radio",
+        "options": [
+          "ผู้อำนวยการ",
+          "ครู",
+          "บุคลากรทางการศึกษา"
         ],
-        "id": "doc_1bjtz702",
-        "headerTitle": "บันทึกข้อความ"
-    },
-    {
-        "active": true,
-        "name": "บันทึกข้อความถึงครูบางคน",
-        "category": "memo_some",
-        "recipientMode": "selected",
-        "formSchema": [
-            {
-                "key": "content",
-                "label": "เนื้อหา",
-                "type": "textarea",
-                "required": true
-            },
-            {
-                "key": "signerName",
-                "label": "ลงชื่อ",
-                "type": "text",
-                "required": true
-            },
-            {
-                "key": "signerPosition",
-                "label": "ตำแหน่ง",
-                "type": "text",
-                "required": true
-            }
+        "required": true
+      },
+      {
+        "key": "appointDate",
+        "label": "บรรจุแต่งตั้งโรงเรียนนี้เมื่อวันที่",
+        "type": "date",
+        "required": false
+      },
+      {
+        "key": "patientName",
+        "label": "ขอเบิกค่ารักษาพยาบาลของ (ตนเอง/ชื่อผู้ป่วย)",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "illness",
+        "label": "ป่วยเป็นโรค",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "hospitalName",
+        "label": "เข้ารับการรักษาพยาบาลจากสถานพยาบาล",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "hospitalType",
+        "label": "ประเภทสถานพยาบาล",
+        "type": "radio",
+        "options": [
+          "รัฐบาล",
+          "เอกชน"
         ],
-        "id": "doc_1bju67ms",
-        "headerTitle": "บันทึกข้อความ"
-    },
-    {
-        "active": true,
-        "name": "ประกาศโรงเรียน",
-        "category": "announcement",
-        "recipientMode": "all",
-        "formSchema": [
-            {
-                "key": "content",
-                "label": "เนื้อหาประกาศ",
-                "type": "textarea",
-                "required": true
-            }
+        "required": true
+      },
+      {
+        "key": "admitFrom",
+        "label": "ตั้งแต่วันที่",
+        "type": "date",
+        "required": false
+      },
+      {
+        "key": "admitTo",
+        "label": "ถึงวันที่",
+        "type": "date",
+        "required": false
+      },
+      {
+        "key": "totalAmount",
+        "label": "รวมเป็นเงิน (บาท)",
+        "type": "number",
+        "required": true
+      },
+      {
+        "key": "receiptCount",
+        "label": "ใบเสร็จรับเงินจำนวน (ฉบับ)",
+        "type": "number",
+        "required": false
+      },
+      {
+        "key": "bankAccount",
+        "label": "โอนเงินเข้าบัญชีธนาคารกรุงไทย เลขที่บัญชี",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "noHealthCard",
+        "label": "ไม่มีบัตรประกันสุขภาพ",
+        "type": "checkbox",
+        "required": false
+      },
+      {
+        "key": "noSocialSecurity",
+        "label": "ไม่มีบัตรประกันสังคม",
+        "type": "checkbox",
+        "required": false
+      }
+    ],
+    "id": "doc_r3vjilts"
+  },
+  {
+    "active": true,
+    "name": "แบบขอหนังสือรับรอง/แบบคำขอต่างๆ",
+    "category": "certificate_request",
+    "recipientMode": "single",
+    "headerTitle": "แบบขอหนังสือรับรอง/แบบคำขอต่างๆ",
+    "formSchema": [
+      {
+        "key": "to",
+        "label": "เรียน",
+        "type": "text",
+        "required": true,
+        "default": "ผู้อำนวยการโรงเรียนศรีนครมูลนิธิ"
+      },
+      {
+        "key": "requestType",
+        "label": "มีความประสงค์ขอ",
+        "type": "select",
+        "options": [
+          "หนังสือรับรองเงินเดือน",
+          "หนังสือรับรองการทำงาน",
+          "หนังสือรับรองการผ่านงาน",
+          "อื่นๆ"
         ],
-        "id": "doc_1bjv3076",
-        "headerTitle": "ประกาศ"
-    },
-    {
-        "active": true,
-        "name": "คำสั่งโรงเรียน (ทุกคน)",
-        "category": "order_all",
-        "recipientMode": "all",
-        "formSchema": [
-            {
-                "key": "content",
-                "label": "เนื้อหาคำสั่ง",
-                "type": "textarea",
-                "required": true
-            }
-        ],
-        "id": "doc_1bjwq9lz",
-        "headerTitle": "คำสั่ง"
-    },
-    {
-        "active": true,
-        "name": "คำสั่งโรงเรียน (เฉพาะบางคน)",
-        "category": "order_some",
-        "recipientMode": "selected",
-        "formSchema": [
-            {
-                "key": "content",
-                "label": "เนื้อหาคำสั่ง",
-                "type": "textarea",
-                "required": true
-            }
-        ],
-        "id": "doc_1bjxlvzg",
-        "headerTitle": "คำสั่ง"
-    },
-    {
-        "active": true,
-        "name": "ใบลา",
-        "category": "leave",
-        "recipientMode": "single",
-        "formSchema": [
-            {
-                "key": "leaveType",
-                "label": "ประเภทการลา",
-                "type": "select",
-                "options": [
-                    "ลาป่วย",
-                    "ลากิจ",
-                    "ลาพักผ่อน"
-                ],
-                "required": true
-            },
-            {
-                "key": "startDate",
-                "label": "ตั้งแต่วันที่",
-                "type": "date",
-                "required": true
-            },
-            {
-                "key": "endDate",
-                "label": "ถึงวันที่",
-                "type": "date",
-                "required": true
-            },
-            {
-                "key": "reason",
-                "label": "เหตุผล",
-                "type": "textarea",
-                "required": true
-            }
-        ],
-        "id": "doc_1bjyokkg",
-        "headerTitle": "บันทึกข้อความ"
-    }
+        "required": true
+      },
+      {
+        "key": "otherDetail",
+        "label": "อื่นๆ ระบุ",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "reason",
+        "label": "เพื่อ (ระบุเหตุผล)",
+        "type": "textarea",
+        "required": true
+      },
+      {
+        "key": "submitTo",
+        "label": "นำไปยื่นต่อ",
+        "type": "text",
+        "required": false
+      },
+      {
+        "key": "neededByDate",
+        "label": "โดยต้องการใช้ภายในวันที่",
+        "type": "date",
+        "required": false
+      }
+    ],
+    "id": "doc_kwicftq8"
+  },
+  {
+    "active": true,
+    "name": "ใบจัดสอนแทนแนบท้ายใบลา",
+    "category": "substitute_teaching",
+    "recipientMode": "single",
+    "headerTitle": "ใบจัดสอนแทนแนบท้ายใบลา",
+    "formSchema": [
+      {
+        "key": "leaveDateFrom",
+        "label": "วันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "leaveDateTo",
+        "label": "ถึงวันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "schedule",
+        "label": "ตารางจัดสอนแทน (ห้อง / ชื่อครูที่แทน ต่อคาบ)",
+        "type": "table",
+        "required": true,
+        "columns": [
+          {
+            "key": "date",
+            "label": "วัน เดือน ปี",
+            "type": "text"
+          },
+          {
+            "key": "p1",
+            "label": "คาบที่ 1",
+            "type": "text"
+          },
+          {
+            "key": "p2",
+            "label": "คาบที่ 2",
+            "type": "text"
+          },
+          {
+            "key": "p3",
+            "label": "คาบที่ 3",
+            "type": "text"
+          },
+          {
+            "key": "p4",
+            "label": "คาบที่ 4",
+            "type": "text"
+          },
+          {
+            "key": "p5",
+            "label": "คาบที่ 5",
+            "type": "text"
+          },
+          {
+            "key": "p6",
+            "label": "คาบที่ 6",
+            "type": "text"
+          },
+          {
+            "key": "p7",
+            "label": "คาบที่ 7",
+            "type": "text"
+          },
+          {
+            "key": "p8",
+            "label": "คาบที่ 8",
+            "type": "text"
+          },
+          {
+            "key": "p9",
+            "label": "คาบที่ 9",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "key": "note",
+        "label": "หมายเหตุ",
+        "type": "textarea",
+        "required": false,
+        "default": "ชื่อครูที่แทนให้เขียนด้วยตัวบรรจง"
+      }
+    ],
+    "id": "doc_9du01gva"
+  },
+  {
+    "active": true,
+    "name": "ใบขอเบิกวัสดุ",
+    "category": "material_requisition",
+    "recipientMode": "single",
+    "headerTitle": "ใบขอเบิกวัสดุ",
+    "formSchema": [
+      {
+        "key": "department",
+        "label": "แผนก/ฝ่าย",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "projectActivity",
+        "label": "ขอเบิกวัสดุเพื่อใช้ในโครงการ/กิจกรรม",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "items",
+        "label": "รายการวัสดุที่ขอเบิก",
+        "type": "table",
+        "required": true,
+        "columns": [
+          {
+            "key": "name",
+            "label": "รายการ",
+            "type": "text"
+          },
+          {
+            "key": "qty",
+            "label": "จำนวน",
+            "type": "number"
+          },
+          {
+            "key": "note",
+            "label": "หมายเหตุ",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "id": "doc_5kx7c0lt"
+  },
+  {
+    "active": true,
+    "name": "แบบขออนุญาตดำเนินการโครงการ/งาน",
+    "category": "project_authorization",
+    "recipientMode": "single",
+    "headerTitle": "แบบขออนุญาตดำเนินการโครงการ/งาน",
+    "formSchema": [
+      {
+        "key": "to",
+        "label": "เรียน",
+        "type": "text",
+        "required": true,
+        "default": "ผู้อำนวยการโรงเรียนศรีนครมูลนิธิ"
+      },
+      {
+        "key": "projectName",
+        "label": "ขออนุมัติให้ดำเนินการโครงการ/งาน",
+        "type": "text",
+        "required": true
+      },
+      {
+        "key": "eventDate",
+        "label": "ในวันที่",
+        "type": "date",
+        "required": true
+      },
+      {
+        "key": "location",
+        "label": "สถานที่",
+        "type": "text",
+        "required": false
+      }
+    ],
+    "id": "doc_af5o6rvw"
+  }
 ]
