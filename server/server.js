@@ -400,12 +400,14 @@ api['GET /api/documents'] = async (req, res, ctx, user) => {
     if (!perm.hasCapability(user, 'review_documents')) return sendJson(res, 403, { error: 'ไม่มีสิทธิ์' });
     docs = docs.filter(d => d.status === 'pending_office_review');
   } else if (box === 'inbox') {
-    // เรื่องที่รอ user คนนี้ดำเนินการ (มี task pending/acknowledged ของตัวเอง หรือแผนกตัวเอง)
-    const userDeptIds = user.departmentIds || [];
+    // เรื่องที่รอ user คนนี้ดำเนินการ (มี task pending/acknowledged ของตัวเอง หรือของแผนกที่ตัวเองเป็น "หัวหน้า")
+    // หมายเหตุ: จงใจไม่เช็ค user.departmentIds (แค่เป็นสมาชิกแผนก) เพราะ 1 คนอยู่ได้หลายแผนก งานที่ส่งถึง "แผนก"
+    // ต้องเห็นเฉพาะหัวหน้าแผนกนั้นก่อน ตรงตามที่ตกลงกันไว้ (isDeptHeadOf) ไม่งั้นคนที่สังกัดหลายแผนกจะเห็นงาน
+    // ของแผนกอื่นที่ตัวเองไม่ใช่หัวหน้าด้วย ทั้งที่หัวหน้าแผนกตัวจริงยังไม่ได้ส่งต่อ/มอบหมายให้เลย
     const myDocIds = new Set(
       db.tasks.find(t =>
         t.status !== 'done' &&
-        (t.assignedToUserId === user.id || (t.assignedToDeptId && (userDeptIds.includes(t.assignedToDeptId) || perm.isDeptHeadOf(user, t.assignedToDeptId))))
+        (t.assignedToUserId === user.id || (t.assignedToDeptId && perm.isDeptHeadOf(user, t.assignedToDeptId)))
       ).map(t => t.documentId)
     );
     if (user.role === 'director') {
@@ -575,7 +577,15 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
         if (!dept.headUserId) return sendJson(res, 400, { error: `แผนก "${dept.name}" ยังไม่ได้กำหนดหัวหน้าแผนก กรุณาตั้งหัวหน้าแผนกก่อน (หน้าผู้ใช้งาน) หรือเลือกส่งถึงบุคคลเฉพาะเจาะจงแทน` });
       }
     }
-    targets.forEach(tg => {
+    // กันส่งซ้ำซ้อน: ถ้าเลือกทั้ง "แผนก" และ "ตัวหัวหน้าแผนกนั้นเป็นรายบุคคล" พร้อมกันในการส่งต่อครั้งเดียว จะกลาย
+    // เป็นงาน 2 ชิ้นแยกกัน (งานของแผนก + งานของบุคคล) ที่ต้องกดรับทราบ/เสร็จสิ้นครบทั้งคู่เอกสารถึงจะเปลี่ยนสถานะ
+    // เป็น "เสร็จสิ้น" ได้ — ถ้าหัวหน้าแผนกกดเสร็จสิ้นแค่ชิ้นเดียว (นึกว่าเป็นงานเดียวกัน) เอกสารจะค้างที่ "กำลัง
+    // ดำเนินการ" ตลอดไปทั้งที่งานจริงเสร็จแล้ว — ตัดรายการบุคคลที่ซ้ำกับหัวหน้าแผนกที่เลือกไว้แล้วออกก่อนสร้างงานจริง
+    const deptHeadIds = new Set(
+      targets.filter(tg => tg.deptId).map(tg => (db.departments.get(tg.deptId) || {}).headUserId).filter(Boolean)
+    );
+    const dedupedTargets = targets.filter(tg => !(tg.userId && deptHeadIds.has(tg.userId)));
+    dedupedTargets.forEach(tg => {
       const task = db.tasks.insert({
         documentId: doc.id, assignedToUserId: tg.userId || null, assignedToDeptId: tg.deptId || null,
         assignedBy: user.id, instructions: tg.instructions || '', status: 'pending',
@@ -598,8 +608,9 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     // ผู้ได้รับมอบหมายลงชื่อรับทราบ
     const task = db.tasks.findOne(t => t.id === body.taskId && t.documentId === doc.id);
     if (!task) return sendJson(res, 404, { error: 'ไม่พบงานที่มอบหมาย' });
-    const userDeptIds = user.departmentIds || [];
-    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && (userDeptIds.includes(task.assignedToDeptId) || perm.isDeptHeadOf(user, task.assignedToDeptId)));
+    // งานที่มอบหมายถึง "แผนก" ให้เฉพาะหัวหน้าแผนกนั้นรับทราบ/ดำเนินการเองได้โดยตรง (ไม่ใช่สมาชิกแผนกทุกคน เพราะ
+    // 1 คนอยู่ได้หลายแผนก เช็คแค่สมาชิกภาพจะทำให้คนแผนกอื่นมากดรับทราบแทนได้ก่อนหัวหน้าแผนกตัวจริงจะเห็นด้วยซ้ำ)
+    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && perm.isDeptHeadOf(user, task.assignedToDeptId));
     if (!allowed) return sendJson(res, 403, { error: 'คุณไม่ได้รับมอบหมายงานนี้' });
     db.tasks.update(task.id, { status: 'acknowledged' });
     db.history.insert({ documentId: doc.id, actorId: user.id, action: 'acknowledged', note: '', signatureName: user.fullName, timestamp: new Date().toISOString() });
@@ -611,12 +622,12 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     // ผู้ปฏิบัติงานรายงานผลเสร็จสิ้น — ต้องพิมพ์ข้อความรายงานผลเสมอ (รูป/PDF แนบเพิ่มได้แต่ไม่บังคับ)
     const task = db.tasks.findOne(t => t.id === body.taskId && t.documentId === doc.id);
     if (!task) return sendJson(res, 404, { error: 'ไม่พบงานที่มอบหมาย' });
-    const userDeptIds = user.departmentIds || [];
-    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && (userDeptIds.includes(task.assignedToDeptId) || perm.isDeptHeadOf(user, task.assignedToDeptId)));
+    // เช่นเดียวกับ acknowledge: งานที่มอบหมายถึง "แผนก" ให้เฉพาะหัวหน้าแผนกนั้นกดเสร็จสิ้นเองได้โดยตรง
+    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && perm.isDeptHeadOf(user, task.assignedToDeptId));
     if (!allowed) return sendJson(res, 403, { error: 'คุณไม่ได้รับมอบหมายงานนี้' });
     if (!body.note || !body.note.trim()) return sendJson(res, 400, { error: 'กรุณาพิมพ์รายงานผลการดำเนินงานก่อนกดเสร็จสิ้น' });
     db.tasks.update(task.id, { status: 'done', completedAt: new Date().toISOString() });
-    db.history.insert({ documentId: doc.id, actorId: user.id, action: 'completed', note: body.note.trim(), signatureName: user.fullName, timestamp: new Date().toISOString() });
+    db.history.insert({ documentId: doc.id, actorId: user.id, action: 'completed', note: body.note.trim(), taskId: task.id, signatureName: user.fullName, timestamp: new Date().toISOString() });
     logAudit(doc.id, user.id, 'complete', body.note || '');
 
     const remaining = db.tasks.find(t => t.documentId === doc.id && t.status !== 'done');
@@ -1546,9 +1557,8 @@ api['GET /api/dashboard'] = async (req, res, ctx, user) => {
       addItem({ key: 'forward_' + d.id, docId: d.id, subject: d.subject, typeName: typesById[d.typeId] ? typesById[d.typeId].name : '-', meta: 'ผอ. เกษียนแล้ว รอส่งต่องาน', urgent: true, createdAt: d.createdAt });
     });
   }
-  // งานที่ได้รับมอบหมาย (ทุกคน)
-  const userDeptIds = user.departmentIds || [];
-  db.tasks.find(t => t.status !== 'done' && (t.assignedToUserId === user.id || (t.assignedToDeptId && (userDeptIds.includes(t.assignedToDeptId) || perm.isDeptHeadOf(user, t.assignedToDeptId))))).forEach(t => {
+  // งานที่ได้รับมอบหมาย (ทุกคน) — งานถึง "แผนก" นับเฉพาะของหัวหน้าแผนกนั้น (ดูเหตุผลที่ canView/inbox)
+  db.tasks.find(t => t.status !== 'done' && (t.assignedToUserId === user.id || (t.assignedToDeptId && perm.isDeptHeadOf(user, t.assignedToDeptId)))).forEach(t => {
     const d = db.documents.get(t.documentId);
     if (!d) return;
     addItem({ key: 'task_' + t.id, docId: d.id, subject: d.subject, typeName: typesById[d.typeId] ? typesById[d.typeId].name : '-', meta: t.status === 'pending' ? 'งานใหม่ รอรับทราบ' : 'รอดำเนินการให้แล้วเสร็จ', urgent: t.status === 'pending', createdAt: t.createdAt });

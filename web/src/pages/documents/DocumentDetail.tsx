@@ -13,11 +13,30 @@ import PersonSelect from '../../components/PersonSelect';
 import { fmtDateTime } from '../../utils/datetime';
 import {
   Printer, CheckCircle, XCircle, RotateCcw, Send, UserCheck, X,
-  Paperclip, FileUp, FileText, Users, Pencil, Undo2
+  Paperclip, FileUp, FileText, Users, Pencil, Undo2, Clock
 } from 'lucide-react';
 
 function isPdf(fileName: string) { return /\.pdf$/i.test(fileName); }
 function isImage(fileName: string) { return /\.(png|jpe?g|gif|webp)$/i.test(fileName); }
+
+// ---- ประวัติดำเนินการ: จับคู่ action code (ภาษาอังกฤษ ใช้ภายในระบบ) กับคำแปลไทย/ไอคอน/สี ให้อ่านง่ายขึ้น ----
+// แต่ละ action มีไอคอน+สีของตัวเอง เพื่อให้กวาดสายตาดูรูปแบบเหตุการณ์ได้เร็ว ไม่ต้องอ่านทีละบรรทัด
+const HISTORY_ACTION_META: Record<string, { icon: any; key: string; tone: string }> = {
+  created: { icon: FileText, key: 'histActCreated', tone: 'text-slate-500 bg-slate-100 dark:bg-slate-800' },
+  returned_for_revision: { icon: Undo2, key: 'histActReturnedForRevision', tone: 'text-amber-600 bg-amber-100 dark:bg-amber-950/40' },
+  resubmitted: { icon: RotateCcw, key: 'histActResubmitted', tone: 'text-sky-600 bg-sky-100 dark:bg-sky-950/40' },
+  office_reviewed: { icon: CheckCircle, key: 'histActOfficeReviewed', tone: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-950/40' },
+  endorsed: { icon: Pencil, key: 'histActEndorsed', tone: 'text-indigo-600 bg-indigo-100 dark:bg-indigo-950/40' },
+  forwarded: { icon: Send, key: 'histActForwarded', tone: 'text-sky-600 bg-sky-100 dark:bg-sky-950/40' },
+  acknowledged: { icon: UserCheck, key: 'histActAcknowledged', tone: 'text-amber-600 bg-amber-100 dark:bg-amber-950/40' },
+  completed: { icon: CheckCircle, key: 'histActCompleted', tone: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-950/40' },
+  rejected: { icon: XCircle, key: 'histActRejected', tone: 'text-rose-600 bg-rose-100 dark:bg-rose-950/40' },
+  returned: { icon: Undo2, key: 'histActReturned', tone: 'text-rose-600 bg-rose-100 dark:bg-rose-950/40' },
+  edited: { icon: Pencil, key: 'histActEdited', tone: 'text-slate-500 bg-slate-100 dark:bg-slate-800' },
+  delegated: { icon: Users, key: 'histActDelegated', tone: 'text-sky-600 bg-sky-100 dark:bg-sky-950/40' },
+  restored: { icon: RotateCcw, key: 'histActRestored', tone: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-950/40' },
+  numbered: { icon: FileText, key: 'histActNumbered', tone: 'text-slate-500 bg-slate-100 dark:bg-slate-800' },
+};
 
 export default function DocumentDetail() {
   const { id } = useParams();
@@ -154,6 +173,47 @@ export default function DocumentDetail() {
   const isHeadOfDept = (deptId: string) => departments.find(d => d.id === deptId)?.headUserId === user?.id;
   const canAttach = isCreator || isReviewer || isDirector || (tasks || []).some((t: any) => t.assignedToUserId === user?.id || (t.assignedToDeptId && isHeadOfDept(t.assignedToDeptId)));
 
+  // ---- บันทึก/ไฟล์แนบตามขั้นตอน: จับคู่ "ใครพิมพ์อะไร" (ประวัติที่มีข้อความ เช่น รายงานผล, เกษียนหนังสือ)
+  // กับ "ใครแนบไฟล์อะไร" (ผ่าน taskId เดียวกัน) ให้ขึ้นเป็นการ์ดแยกของแต่ละคน/แต่ละขั้นตอน แทนที่จะรวมไฟล์
+  // แนบทั้งหมดเป็นก้อนเดียว — ไฟล์แนบที่ไม่ได้ผูกกับขั้นตอนใด (แนบทั่วไปผ่านปุ่ม "แนบไฟล์") จะถูกจัดกลุ่มตาม
+  // ผู้แนบแยกต่างหากด้านล่างแทน
+  const usedAttachmentIds = new Set<string>();
+  const stepRecordCards = (history || [])
+    .filter((h: any) => (h.note && h.note.trim()) || h.action === 'endorsed')
+    .map((h: any, idx: number) => {
+      const files = h.taskId ? (attachments || []).filter(a => a.taskId === h.taskId) : [];
+      files.forEach(f => usedAttachmentIds.add(f.id));
+      const meta = HISTORY_ACTION_META[h.action] || { icon: FileText, key: '', tone: 'text-slate-500 bg-slate-100 dark:bg-slate-800' };
+      return {
+        key: `step-${h.action}-${idx}-${h.timestamp}`,
+        icon: meta.icon,
+        tone: meta.tone,
+        actionLabel: (meta.key && t(meta.key)) || h.action,
+        actorName: h.actorName,
+        timestamp: h.timestamp,
+        note: h.note && h.note.trim() ? h.note : '',
+        files,
+      };
+    });
+
+  const looseAttachmentsByUploader = new Map<string, { name: string; files: Attachment[] }>();
+  (attachments || []).filter(a => !usedAttachmentIds.has(a.id)).forEach(a => {
+    const k = a.uploadedBy;
+    if (!looseAttachmentsByUploader.has(k)) looseAttachmentsByUploader.set(k, { name: a.uploadedByName || '-', files: [] });
+    looseAttachmentsByUploader.get(k)!.files.push(a);
+  });
+  const looseRecordCards = Array.from(looseAttachmentsByUploader.entries()).map(([uploaderId, group]) => ({
+    key: `loose-${uploaderId}`,
+    icon: Paperclip,
+    tone: 'text-slate-500 bg-slate-100 dark:bg-slate-800',
+    actionLabel: t('docGeneralAttachments'),
+    actorName: group.name,
+    timestamp: group.files.reduce((max, f) => f.uploadedAt > max ? f.uploadedAt : max, group.files[0]?.uploadedAt || ''),
+    note: '',
+    files: group.files,
+  }));
+  const recordCards = [...stepRecordCards, ...looseRecordCards];
+
   return (
     <div className="max-w-4xl space-y-6">
       <div className="flex items-start justify-between flex-wrap gap-3 no-print">
@@ -242,10 +302,12 @@ export default function DocumentDetail() {
         </div>
       </div>
 
-      {/* ไฟล์แนบ (PDF/รูป) — แนบเพิ่มได้ทุกช่วง ไม่บังคับ ดูตัวอย่างและสั่งพิมพ์ได้เลยโดยไม่ต้องดาวน์โหลด */}
+      {/* บันทึกและไฟล์แนบตามขั้นตอน — แยกเป็นการ์ดของแต่ละคน/แต่ละขั้นตอน (รายงานผล, เกษียนหนังสือ, ตรวจกรอง ฯลฯ)
+          พร้อมไฟล์ที่แนบมาพร้อมกัน จะได้รู้ว่าใครพิมพ์อะไร/แนบอะไรมาในขั้นตอนไหน ไม่ปนกันเป็นก้อนเดียว
+          จัดวางแบบ grid ที่ย่อ/ขยายตามขนาดจอ (มือถือ 1 คอลัมน์ จอกว้างขึ้นแบ่งครึ่ง 2 คอลัมน์) */}
       <div className="no-print bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-medium text-sm flex items-center gap-2"><Paperclip size={15} />{t('docAttachments')}</h3>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h3 className="font-medium text-sm flex items-center gap-2"><Paperclip size={15} />{t('docStepRecordsTitle')}</h3>
           {canAttach && (
             <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-[var(--color-border)] text-xs font-medium cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
               <FileUp size={13} /> {attachBusy ? 'กำลังอัปโหลด...' : 'แนบไฟล์ (ไม่บังคับ แนบได้หลายไฟล์)'}
@@ -254,15 +316,44 @@ export default function DocumentDetail() {
             </label>
           )}
         </div>
-        {(!attachments || attachments.length === 0) && <p className="text-xs text-slate-400">{t('docNoAttachments')}</p>}
-        <div className="space-y-2">
-          {attachments?.map(a => (
-            <div key={a.id} className="flex items-center gap-3 border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm">
-              <FileText size={16} className="text-[var(--color-primary)] shrink-0" />
-              <span className="flex-1 truncate">{a.fileName}</span>
-              <button onClick={() => setPreviewAttachment(a)} className="text-xs px-2.5 py-1 rounded-lg border border-[var(--color-border)]">{t('docPreview')}</button>
-            </div>
-          ))}
+        {recordCards.length === 0 && <p className="text-xs text-slate-400">{t('docStepRecordsEmpty')}</p>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {recordCards.map(rec => {
+            const Icon = rec.icon;
+            return (
+              <div key={rec.key} className="border border-[var(--color-border)] rounded-lg p-3 space-y-2 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${rec.tone}`}>
+                      <Icon size={14} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{rec.actorName}</p>
+                      <p className="text-xs text-slate-400 truncate">{rec.actionLabel}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-slate-400 shrink-0 whitespace-nowrap">{fmtDateTime(rec.timestamp)}</span>
+                </div>
+
+                {rec.note && (
+                  <p className="text-sm bg-slate-50 dark:bg-slate-800/40 rounded-lg px-2.5 py-2 whitespace-pre-wrap break-words">{rec.note}</p>
+                )}
+
+                {rec.files.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-slate-400">{t('docAttachedFilesLabel')}</p>
+                    {rec.files.map(a => (
+                      <div key={a.id} className="flex items-center gap-2 border border-[var(--color-border)] rounded-lg px-2.5 py-1.5 text-xs">
+                        <FileText size={14} className="text-[var(--color-primary)] shrink-0" />
+                        <span className="flex-1 truncate">{a.fileName}</span>
+                        <button onClick={() => setPreviewAttachment(a)} className="px-2 py-1 rounded-md border border-[var(--color-border)] shrink-0">{t('docPreview')}</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -505,23 +596,65 @@ export default function DocumentDetail() {
         )}
       </div>
 
+      {/* สถานะงานที่มอบหมาย — สรุปภาพรวมสั้นๆ ว่างานส่งถึงใคร/แผนกไหนบ้าง ใครรับทราบแล้ว ใครยังไม่รับทราบ
+          ใครทำเสร็จแล้ว ดูรวดเดียวจบโดยไม่ต้องไล่อ่านประวัติทั้งหมดทีละบรรทัด */}
+      {tasks && tasks.length > 0 && (
+        <div className="no-print bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] p-5">
+          <h3 className="font-medium text-sm mb-3">{t('histTaskOverviewTitle') || 'สถานะงานที่มอบหมาย'}</h3>
+          <div className="space-y-2">
+            {tasks.map((task: any) => {
+              const statusMeta = task.status === 'done'
+                ? { icon: CheckCircle, tone: 'text-emerald-600 bg-emerald-100 dark:bg-emerald-950/40', label: t('docComplete') || 'เสร็จสิ้น' }
+                : task.status === 'acknowledged'
+                ? { icon: Clock, tone: 'text-sky-600 bg-sky-100 dark:bg-sky-950/40', label: t('histPendingComplete') || 'รับทราบแล้ว รอดำเนินการ' }
+                : { icon: UserCheck, tone: 'text-amber-600 bg-amber-100 dark:bg-amber-950/40', label: t('histPendingAck') || 'ยังไม่รับทราบ' };
+              const StatusIcon = statusMeta.icon;
+              return (
+                <div key={task.id} className="flex items-start gap-3 border border-[var(--color-border)] rounded-lg px-3 py-2.5">
+                  <span className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${statusMeta.tone}`}>
+                    <StatusIcon size={16} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="text-sm font-medium">{task.assignedToName || '-'}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${statusMeta.tone}`}>{statusMeta.label}</span>
+                    </div>
+                    {task.instructions && <p className="text-xs text-slate-500 mt-0.5">{task.instructions}</p>}
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {t('histAssignedBy') || 'มอบหมายโดย'} {task.assignedByName || '-'} · {fmtDateTime(task.completedAt || task.createdAt)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ประวัติ */}
       <div className="no-print">
         <h3 className="font-medium text-sm mb-3">{t('docHistoryTitle')}</h3>
         <div className="space-y-0">
-          {history.map((h: any, i: number) => (
-            <div key={i} className="flex gap-3 pb-4 last:pb-0">
-              <div className="flex flex-col items-center">
-                <span className="w-2 h-2 rounded-full bg-[var(--color-primary)] mt-1.5" />
-                {i < history.length - 1 && <span className="w-px flex-1 bg-[var(--color-border)]" />}
+          {history.map((h: any, i: number) => {
+            const meta = HISTORY_ACTION_META[h.action] || { icon: FileText, key: '', tone: 'text-slate-500 bg-slate-100 dark:bg-slate-800' };
+            const Icon = meta.icon;
+            const label = (meta.key && t(meta.key)) || h.action;
+            return (
+              <div key={i} className="flex gap-3 pb-4 last:pb-0">
+                <div className="flex flex-col items-center">
+                  <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${meta.tone}`}>
+                    <Icon size={14} />
+                  </span>
+                  {i < history.length - 1 && <span className="w-px flex-1 bg-[var(--color-border)] mt-1" />}
+                </div>
+                <div className="pb-1 pt-0.5">
+                  <p className="text-sm"><span className="font-medium">{h.actorName}</span> — {label}</p>
+                  {h.note && <p className="text-xs text-slate-500 mt-0.5">{h.note}</p>}
+                  <p className="text-xs text-slate-400 mt-0.5">{fmtDateTime(h.timestamp)}</p>
+                </div>
               </div>
-              <div className="pb-1">
-                <p className="text-sm"><span className="font-medium">{h.actorName}</span> — {h.action}</p>
-                {h.note && <p className="text-xs text-slate-500 mt-0.5">{h.note}</p>}
-                <p className="text-xs text-slate-400 mt-0.5">{fmtDateTime(h.timestamp)}</p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
