@@ -15,7 +15,11 @@ import PersonSelect from '../../components/PersonSelect';
 import { fmtDateTime } from '../../utils/datetime';
 import {
   Printer, CheckCircle, XCircle, RotateCcw, Send, UserCheck, X,
+<<<<<<< HEAD
   Paperclip, FileUp, FileText, Users, Pencil, Undo2, Clock, AlertTriangle
+=======
+  Paperclip, FileUp, FileText, Users, Pencil, Undo2, Clock
+>>>>>>> a73ca2e93894997d8836a0398164d2b4f885df71
 } from 'lucide-react';
 
 function isPdf(fileName: string) { return /\.pdf$/i.test(fileName); }
