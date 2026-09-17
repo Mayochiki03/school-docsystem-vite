@@ -185,7 +185,10 @@ async function sendNightlyReportAndRestart() {
   const parsed = lastLine ? parseBackupLogLine(lastLine) : null;
   const docCount = db.documents.all().length;
   const nasConfigured = !!process.env.NAS_BACKUP_PATH;
-  const to = process.env.BACKUP_REPORT_EMAIL || 'ahisorn.s@srinakorn.ac.th';
+  const to = process.env.BACKUP_REPORT_EMAIL;
+  // เดิม fallback เป็นอีเมลจริงของโรงเรียนที่ hardcode ไว้ในโค้ด (ความเสี่ยงด้านข้อมูล) ตัดออกแล้ว — ถ้าไม่ได้ตั้ง
+  // BACKUP_REPORT_EMAIL ไว้ใน .env ก็แค่ข้ามการส่งอีเมลไป (เหมือน mailer.sendBackupReport จัดการเมื่อ SMTP ไม่ครบอยู่แล้ว)
+  // แต่ยังต้องรีสตาร์ทพอร์ตเว็บตามปกติด้านล่าง ไม่ให้พฤติกรรมการรีสตาร์ทรายคืนเปลี่ยนไปจากเดิม
 
   const backupOk = !!parsed;
   const nasOk = parsed?.nasStatus ? parsed.nasStatus.ok : null;
@@ -212,7 +215,9 @@ async function sendNightlyReportAndRestart() {
     footerNote: 'ระบบกำลังจะรีสตาร์ทพอร์ตเว็บ 1 รอบตามกำหนดเวลา (ปกติของระบบ ไม่ใช่ข้อผิดพลาด) — อีเมลนี้ส่งอัตโนมัติทุกคืน ไม่ต้องตอบกลับ'
   });
 
-  const mailResult = await mailer.sendBackupReport({ to, subject: `${overallOk ? '✓' : '⚠'} รายงานสำรองข้อมูลประจำคืน - SNKDocSystem`, html });
+  const mailResult = to
+    ? await mailer.sendBackupReport({ to, subject: `${overallOk ? '✓' : '⚠'} รายงานสำรองข้อมูลประจำคืน - SNKDocSystem`, html })
+    : { skipped: true, reason: 'ไม่ได้ตั้งค่า BACKUP_REPORT_EMAIL ใน .env' };
   fs.appendFileSync(path.join(BACKUP_ROOT, 'backup.log'),
     `[${new Date().toISOString()}] รายงานอีเมล: ${mailResult.skipped ? 'ข้าม (' + mailResult.reason + ')' : (mailResult.ok ? 'ส่งสำเร็จ' : 'ส่งล้มเหลว: ' + mailResult.error)} | กำลังรีสตาร์ทพอร์ตเว็บ\n`);
   // ให้ process manager (nssm/PM2) เป็นผู้ relaunch โดยตั้ง auto-restart ไว้ — ระบบแค่ออกจากโปรเซสอย่างสุภาพ

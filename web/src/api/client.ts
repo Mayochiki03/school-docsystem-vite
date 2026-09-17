@@ -87,12 +87,20 @@ export interface DocumentType {
   // แสดงเป็นไฟล์ PDF ให้ดาวน์โหลด/พรีวิว/สั่งพิมพ์แทน (ดู server/static-forms/README.md)
   formKind?: 'digital' | 'static_pdf';
   staticPdfFileName?: string | null;
+  // ซ่อนหัวเอกสารมาตรฐาน (ชื่อโรงเรียน/ที่-วันที่/เรื่อง/เรียน) ตอนพิมพ์ — ใช้เมื่อฟิลด์ richtext
+  // พิมพ์หัวจดหมายเองครบอยู่แล้วในเนื้อหา (เช่น คำสั่งโรงเรียนที่พิมพ์แบบ Word ทั้งฉบับ)
+  hideMemoHeader?: boolean;
 }
 
 export interface FormField {
   key: string;
   label: string;
-  type: 'text' | 'textarea' | 'date' | 'select' | 'number' | 'time' | 'checkbox' | 'radio' | 'table';
+  // 'richtext': ข้อความอิสระแบบ Word — พิมพ์เป็นย่อหน้า จัดตัวหนา/ลิสต์/เยื้อง/จัดหน้าได้อิสระ ไม่ตายตัวเป็นช่องๆ
+  // เหมาะกับเนื้อหาที่รูปแบบไม่คงที่ เช่น คำสั่งโรงเรียน ค่าที่เก็บคือ HTML string (ดู src/utils/richText.ts)
+  // 'fileContent': แนบไฟล์ Word/PDF ให้เป็นเนื้อหาหลักของเอกสาร (ระบบแปลง .docx เป็น PDF ให้อัตโนมัติแล้วแสดง
+  // ตัวอย่างในหน้าเว็บเลย ไม่ต้องดาวน์โหลดไปเปิดเอง) เหมาะกับเอกสารที่รูปแบบอิสระมากจนพิมพ์ในระบบไม่สะดวก
+  // เช่น คำสั่งโรงเรียนที่ร่างเป็น Word อยู่แล้ว ค่าที่เก็บ: { fileName, filePath, pdfPath, convertedOk, convertError }
+  type: 'text' | 'textarea' | 'date' | 'select' | 'number' | 'time' | 'checkbox' | 'radio' | 'table' | 'richtext' | 'fileContent';
   required?: boolean;
   default?: string;
   options?: string[]; // ใช้กับ select และ radio

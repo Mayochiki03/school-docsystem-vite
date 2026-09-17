@@ -37,3 +37,28 @@ self.addEventListener('notificationclick', event => {
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+
+// บาง browser (หลักๆ คือ Chrome/Edge) จะยิง event นี้เองเวลา push subscription ใกล้หมดอายุ/ถูกหมุน endpoint
+// ใหม่โดยอัตโนมัติ (ผู้ใช้ไม่ได้ทำอะไรเลย) — ถ้าไม่ดักไว้ subscription เดิมจะใช้ไม่ได้อีกต่อไปเงียบๆ โดยที่ทั้ง
+// ฝั่งเบราว์เซอร์และเซิร์ฟเวอร์ไม่มีใครรู้ตัว จนกว่าผู้ใช้จะสังเกตว่าไม่มีแจ้งเตือนเข้ามานานแล้ว
+self.addEventListener('pushsubscriptionchange', event => {
+  event.waitUntil((async () => {
+    try {
+      const keyRes = await fetch('/api/push/public-key', { credentials: 'include' });
+      const { publicKey, configured } = await keyRes.json();
+      if (!configured) return;
+      const applicationServerKey = Uint8Array.from(
+        atob((publicKey + '='.repeat((4 - (publicKey.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/')),
+        c => c.charCodeAt(0)
+      );
+      const sub = event.newSubscription || await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+      await fetch('/api/push/subscribe', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: sub.toJSON() }),
+      });
+    } catch (e) {
+      // เงียบไว้ — ถ้าพังจริง หน้าแอปยัง sync ซ้ำให้เองอีกทีตอนผู้ใช้เปิดแอป (ดู src/lib/push.ts: syncPushSubscription)
+    }
+  })());
+});

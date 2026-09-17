@@ -31,7 +31,7 @@ const COLLECTIONS = [
   'tasks', 'history', 'attachments', 'notifications', 'auditLog', 'counters',
   'guardChecklistItems', 'guardLogs', 'settings', 'announcements',
   'dutyTypes', 'dutyCoverage', 'dutyLogs', 'dutyHeads', 'vehicleLogs',
-  'featureToggles', 'importLogs', 'pushSubscriptions'
+  'featureToggles', 'importLogs', 'pushSubscriptions', 'sessions'
 ];
 
 let db; // เปลี่ยนจาก const เป็น let เพราะต้อง reassign ได้ตอน reopen()

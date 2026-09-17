@@ -13,8 +13,22 @@ const crypto = require('crypto');
 const db = require('./db/sqliteStore');
 const auth = require('./lib/auth');
 const perm = require('./lib/permissions');
+const officeConvert = require('./lib/officeConvert');
 const { runBackup, scheduleDailyBackup } = require('./scripts/backup');
 require('./db/seed')(); // seed ถ้ายังไม่มีข้อมูล
+
+// เตือนตอนสตาร์ทถ้ายังไม่มี LibreOffice ใช้แปลงไฟล์ Word เป็น PDF (ฟิลด์ชนิด "แนบไฟล์เอกสาร") — ไม่ได้ทำให้
+// เซิร์ฟเวอร์รันไม่ได้ (ฟีเจอร์อื่นใช้งานได้ปกติ) แค่ฟิลด์ชนิดนี้จะแปลง .docx เป็น PDF ให้พรีวิวไม่ได้เท่านั้น
+if (!officeConvert.isConversionAvailable()) {
+  console.warn('[คำเตือน] ไม่พบ LibreOffice (soffice) ในเครื่องนี้ — ฟิลด์ "แนบไฟล์เอกสาร" จะแปลง .docx เป็น PDF ให้พรีวิวไม่ได้ ' +
+    '(ผู้ใช้ยังดาวน์โหลดไฟล์ต้นฉบับไปเปิดเองได้ปกติ) ดูวิธีติดตั้งที่ README หัวข้อ "ฟอนต์สำหรับแปลงเอกสาร"');
+} else {
+  const fontOk = officeConvert.hasThaiFontInstalled();
+  if (fontOk === false) {
+    console.warn('[คำเตือน] ไม่พบฟอนต์ไทย (Sarabun) ติดตั้งในเครื่องนี้ — ไฟล์ Word ที่แปลงเป็น PDF อาจหน้าตาไม่ตรงกับต้นฉบับ ' +
+      '(ใช้ฟอนต์สำรองแทน) ดูวิธีติดตั้งที่ server/fonts/README.md แล้วรัน server/scripts/install-fonts.sh');
+  }
+}
 
 // สำรองข้อมูลทันทีตอนเริ่มเซิร์ฟเวอร์ 1 ครั้ง แล้วตั้งเวลาให้รันอัตโนมัติทุกวัน (ค่าเริ่มต้น 02:00 น. ปรับได้ด้วย env BACKUP_HOUR)
 try { runBackup(); } catch (e) { console.error('สำรองข้อมูลเริ่มต้นล้มเหลว:', e.message); }
@@ -80,6 +94,45 @@ function getCurrentUser(req) {
 }
 
 const push = require('./lib/push');
+// ฟิลด์ชนิด "fileContent" — แนบไฟล์ Word/PDF ให้เป็นเนื้อหาหลักของเอกสาร (ใช้กับฟอร์มที่พิมพ์ไม่ตายตัวมากๆ
+// เช่น คำสั่งโรงเรียน แทนที่จะพิมพ์ในระบบทั้งฉบับ) เรียกจากทั้ง 3 จุดที่เอกสารถูกบันทึก fields ได้ (สร้างใหม่/
+// update ระหว่างรอตรวจกรอง/resubmit หลังถูกตีกลับ) เพื่อไม่ให้พลาดจุดใดจุดหนึ่งไป
+const DOCX_LIKE_EXT = new Set(['.doc', '.docx', '.odt', '.rtf']);
+function processFileContentFields(type, fields) {
+  if (!fields || !type || !Array.isArray(type.formSchema)) return fields;
+  type.formSchema.forEach(f => {
+    if (f.type !== 'fileContent') return;
+    const val = fields[f.key];
+    if (!val || typeof val !== 'object' || !val.base64) return; // ไม่ใช่ไฟล์ใหม่ (ไม่มี base64) -> ข้าม ของเดิมอยู่แล้ว
+    const safeName = Date.now() + '_' + String(val.fileName || 'file').replace(/[^a-zA-Z0-9ก-๙._-]/g, '_');
+    const filePath = path.join(UPLOAD_DIR, safeName);
+    const base64Data = val.base64.replace(/^data:.*;base64,/, '');
+    fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+    const ext = path.extname(safeName).toLowerCase();
+    const descriptor = {
+      fileName: val.fileName || safeName, filePath: '/uploads/' + safeName,
+      uploadedAt: new Date().toISOString(), convertedOk: false, pdfPath: null, convertError: null,
+    };
+    if (ext === '.pdf') {
+      descriptor.pdfPath = descriptor.filePath;
+      descriptor.convertedOk = true;
+    } else if (DOCX_LIKE_EXT.has(ext)) {
+      try {
+        const pdfOut = officeConvert.convertToPdf(filePath, UPLOAD_DIR);
+        descriptor.pdfPath = '/uploads/' + path.basename(pdfOut);
+        descriptor.convertedOk = true;
+      } catch (e) {
+        console.error('[fileContent] แปลง PDF ล้มเหลว:', e.message);
+        descriptor.convertError = 'ไม่สามารถแปลงเป็น PDF เพื่อแสดงตัวอย่างในระบบได้ ผู้เกี่ยวข้องจะต้องดาวน์โหลดไฟล์ต้นฉบับไปเปิดเอง (ถ้าเกิดซ้ำบ่อย แจ้งแอดมินให้ตรวจสอบ LibreOffice บนเซิร์ฟเวอร์)';
+      }
+    } else {
+      descriptor.convertError = 'ไฟล์ชนิดนี้ไม่รองรับ (รองรับเฉพาะ .doc, .docx, .odt, .rtf, .pdf)';
+    }
+    fields[f.key] = descriptor;
+  });
+  return fields;
+}
+
 function notify(userId, documentId, message) {
   db.notifications.insert({ userId, documentId, message, isRead: false, createdAt: new Date().toISOString() });
   // เฟส 9: ส่ง push notification ไปยังอุปกรณ์ (PWA) ของผู้ใช้ ถ้าตั้งค่า VAPID ไว้แล้ว — ล้มเหลวเงียบๆ ถ้ายังไม่ได้ตั้งค่า ไม่กระทบระบบหลัก
@@ -361,7 +414,11 @@ api['POST /api/documentTypes'] = async (req, res, ctx, user) => {
     recipientMode: body.recipientMode || 'single', requiresScan: !!body.requiresScan,
     formSchema: body.formSchema, active: true,
     headerTitle: body.headerTitle || 'บันทึกข้อความ',
-    workflowMode: body.workflowMode || 'standard', fixedDeptId: body.fixedDeptId || null
+    workflowMode: body.workflowMode || 'standard', fixedDeptId: body.fixedDeptId || null,
+    // เดิมสองฟิลด์นี้หลุดตอนสร้างประเภทเอกสารใหม่ (มีแค่ตอนแก้ไข/PUT) ทำให้เลือก "PDF พิมพ์เปล่า" หรือ
+    // "ซ่อนหัวเอกสารมาตรฐาน" ตอนสร้างครั้งแรกไม่ติด ต้องกลับไปกดแก้ไขซ้ำอีกที — แก้ให้ติดตั้งแต่ตอนสร้างเลย
+    formKind: body.formKind || 'digital', staticPdfFileName: body.staticPdfFileName || null,
+    hideMemoHeader: !!body.hideMemoHeader,
   });
   sendJson(res, 201, t);
 };
@@ -400,12 +457,14 @@ api['GET /api/documents'] = async (req, res, ctx, user) => {
     if (!perm.hasCapability(user, 'review_documents')) return sendJson(res, 403, { error: 'ไม่มีสิทธิ์' });
     docs = docs.filter(d => d.status === 'pending_office_review');
   } else if (box === 'inbox') {
-    // เรื่องที่รอ user คนนี้ดำเนินการ (มี task pending/acknowledged ของตัวเอง หรือแผนกตัวเอง)
-    const userDeptIds = user.departmentIds || [];
+    // เรื่องที่รอ user คนนี้ดำเนินการ (มี task pending/acknowledged ของตัวเอง หรือของแผนกที่ตัวเองเป็น "หัวหน้า")
+    // หมายเหตุ: จงใจไม่เช็ค user.departmentIds (แค่เป็นสมาชิกแผนก) เพราะ 1 คนอยู่ได้หลายแผนก งานที่ส่งถึง "แผนก"
+    // ต้องเห็นเฉพาะหัวหน้าแผนกนั้นก่อน ตรงตามที่ตกลงกันไว้ (isDeptHeadOf) ไม่งั้นคนที่สังกัดหลายแผนกจะเห็นงาน
+    // ของแผนกอื่นที่ตัวเองไม่ใช่หัวหน้าด้วย ทั้งที่หัวหน้าแผนกตัวจริงยังไม่ได้ส่งต่อ/มอบหมายให้เลย
     const myDocIds = new Set(
       db.tasks.find(t =>
         t.status !== 'done' &&
-        (t.assignedToUserId === user.id || (t.assignedToDeptId && (userDeptIds.includes(t.assignedToDeptId) || perm.isDeptHeadOf(user, t.assignedToDeptId))))
+        (t.assignedToUserId === user.id || (t.assignedToDeptId && perm.isDeptHeadOf(user, t.assignedToDeptId)))
       ).map(t => t.documentId)
     );
     if (user.role === 'director') {
@@ -443,6 +502,7 @@ api['POST /api/documents'] = async (req, res, ctx, user) => {
     const dept = db.departments.get(targetDeptId);
     if (!dept) return sendJson(res, 400, { error: 'ไม่พบแผนกปลายทางที่เลือก' });
     if (!dept.headUserId) return sendJson(res, 400, { error: `แผนก "${dept.name}" ยังไม่ได้กำหนดหัวหน้าแผนก กรุณาแจ้งแอดมินตั้งหัวหน้าแผนกก่อน (หน้าจัดการผู้ใช้งาน)` });
+    body.fields = processFileContentFields(type, body.fields || {});
     const doc = db.documents.insert({
       docNumber: body.docNumber || '', docYear: body.docYear || '',
       typeId: body.typeId, subject: body.subject, fields: body.fields || {},
@@ -463,6 +523,7 @@ api['POST /api/documents'] = async (req, res, ctx, user) => {
 
   // ถ้าผู้อำนวยการเป็นผู้จัดทำเอกสารเอง ถือว่าอนุมัติ/เกษียนแล้วโดยอัตโนมัติ ไม่ต้องกดอนุมัติซ้ำ
   const isDirectorAuthored = user.role === 'director';
+  body.fields = processFileContentFields(type, body.fields || {});
 
   // เฟส 9: เอกสารทุกฉบับ (ยกเว้น ผอ. จัดทำเอง) ต้องผ่านหัวหน้าสำนักงานตรวจกรองก่อน ถึงจะไปถึง ผอ.
   const doc = db.documents.insert({
@@ -539,6 +600,7 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
   if (!perm.canView(user, doc)) return sendJson(res, 403, { error: 'ไม่มีสิทธิ์' });
   const body = await readBody(req);
   const action = body.action;
+  const docType = db.documentTypes.get(doc.typeId);
 
   if (action === 'endorse') {
     // ผอ. เกษียนหนังสือ: approve / acknowledge / reject (ต้องผ่านการตรวจกรองจากหัวหน้าสำนักงานมาก่อนแล้ว)
@@ -575,7 +637,15 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
         if (!dept.headUserId) return sendJson(res, 400, { error: `แผนก "${dept.name}" ยังไม่ได้กำหนดหัวหน้าแผนก กรุณาตั้งหัวหน้าแผนกก่อน (หน้าผู้ใช้งาน) หรือเลือกส่งถึงบุคคลเฉพาะเจาะจงแทน` });
       }
     }
-    targets.forEach(tg => {
+    // กันส่งซ้ำซ้อน: ถ้าเลือกทั้ง "แผนก" และ "ตัวหัวหน้าแผนกนั้นเป็นรายบุคคล" พร้อมกันในการส่งต่อครั้งเดียว จะกลาย
+    // เป็นงาน 2 ชิ้นแยกกัน (งานของแผนก + งานของบุคคล) ที่ต้องกดรับทราบ/เสร็จสิ้นครบทั้งคู่เอกสารถึงจะเปลี่ยนสถานะ
+    // เป็น "เสร็จสิ้น" ได้ — ถ้าหัวหน้าแผนกกดเสร็จสิ้นแค่ชิ้นเดียว (นึกว่าเป็นงานเดียวกัน) เอกสารจะค้างที่ "กำลัง
+    // ดำเนินการ" ตลอดไปทั้งที่งานจริงเสร็จแล้ว — ตัดรายการบุคคลที่ซ้ำกับหัวหน้าแผนกที่เลือกไว้แล้วออกก่อนสร้างงานจริง
+    const deptHeadIds = new Set(
+      targets.filter(tg => tg.deptId).map(tg => (db.departments.get(tg.deptId) || {}).headUserId).filter(Boolean)
+    );
+    const dedupedTargets = targets.filter(tg => !(tg.userId && deptHeadIds.has(tg.userId)));
+    dedupedTargets.forEach(tg => {
       const task = db.tasks.insert({
         documentId: doc.id, assignedToUserId: tg.userId || null, assignedToDeptId: tg.deptId || null,
         assignedBy: user.id, instructions: tg.instructions || '', status: 'pending',
@@ -598,8 +668,9 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     // ผู้ได้รับมอบหมายลงชื่อรับทราบ
     const task = db.tasks.findOne(t => t.id === body.taskId && t.documentId === doc.id);
     if (!task) return sendJson(res, 404, { error: 'ไม่พบงานที่มอบหมาย' });
-    const userDeptIds = user.departmentIds || [];
-    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && (userDeptIds.includes(task.assignedToDeptId) || perm.isDeptHeadOf(user, task.assignedToDeptId)));
+    // งานที่มอบหมายถึง "แผนก" ให้เฉพาะหัวหน้าแผนกนั้นรับทราบ/ดำเนินการเองได้โดยตรง (ไม่ใช่สมาชิกแผนกทุกคน เพราะ
+    // 1 คนอยู่ได้หลายแผนก เช็คแค่สมาชิกภาพจะทำให้คนแผนกอื่นมากดรับทราบแทนได้ก่อนหัวหน้าแผนกตัวจริงจะเห็นด้วยซ้ำ)
+    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && perm.isDeptHeadOf(user, task.assignedToDeptId));
     if (!allowed) return sendJson(res, 403, { error: 'คุณไม่ได้รับมอบหมายงานนี้' });
     db.tasks.update(task.id, { status: 'acknowledged' });
     db.history.insert({ documentId: doc.id, actorId: user.id, action: 'acknowledged', note: '', signatureName: user.fullName, timestamp: new Date().toISOString() });
@@ -611,12 +682,12 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     // ผู้ปฏิบัติงานรายงานผลเสร็จสิ้น — ต้องพิมพ์ข้อความรายงานผลเสมอ (รูป/PDF แนบเพิ่มได้แต่ไม่บังคับ)
     const task = db.tasks.findOne(t => t.id === body.taskId && t.documentId === doc.id);
     if (!task) return sendJson(res, 404, { error: 'ไม่พบงานที่มอบหมาย' });
-    const userDeptIds = user.departmentIds || [];
-    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && (userDeptIds.includes(task.assignedToDeptId) || perm.isDeptHeadOf(user, task.assignedToDeptId)));
+    // เช่นเดียวกับ acknowledge: งานที่มอบหมายถึง "แผนก" ให้เฉพาะหัวหน้าแผนกนั้นกดเสร็จสิ้นเองได้โดยตรง
+    const allowed = task.assignedToUserId === user.id || (task.assignedToDeptId && perm.isDeptHeadOf(user, task.assignedToDeptId));
     if (!allowed) return sendJson(res, 403, { error: 'คุณไม่ได้รับมอบหมายงานนี้' });
     if (!body.note || !body.note.trim()) return sendJson(res, 400, { error: 'กรุณาพิมพ์รายงานผลการดำเนินงานก่อนกดเสร็จสิ้น' });
     db.tasks.update(task.id, { status: 'done', completedAt: new Date().toISOString() });
-    db.history.insert({ documentId: doc.id, actorId: user.id, action: 'completed', note: body.note.trim(), signatureName: user.fullName, timestamp: new Date().toISOString() });
+    db.history.insert({ documentId: doc.id, actorId: user.id, action: 'completed', note: body.note.trim(), taskId: task.id, signatureName: user.fullName, timestamp: new Date().toISOString() });
     logAudit(doc.id, user.id, 'complete', body.note || '');
 
     const remaining = db.tasks.find(t => t.documentId === doc.id && t.status !== 'done');
@@ -710,7 +781,7 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     if (doc.status !== 'pending_office_review') return sendJson(res, 400, { error: 'แก้ไขได้เฉพาะตอนเอกสารยังอยู่ในสถานะรอตรวจกรองเท่านั้น (ถ้าผ่านการพิจารณาไปแล้วต้องรอถูกตีกลับก่อน)' });
     const patch = {};
     if (body.subject) patch.subject = body.subject;
-    if (body.fields) patch.fields = body.fields;
+    if (body.fields) patch.fields = processFileContentFields(docType, body.fields);
     if (body.confidential !== undefined) patch.confidential = body.confidential;
     if (body.dueDate !== undefined) patch.dueDate = body.dueDate;
     if (body.signature !== undefined) patch.creatorSignature = body.signature;
@@ -726,7 +797,7 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
     if (!['returned', 'returned_for_revision'].includes(doc.status)) return sendJson(res, 400, { error: 'เอกสารนี้ไม่ได้อยู่ในสถานะตีกลับ' });
     const patch = { status: 'pending_office_review' };
     if (body.subject) patch.subject = body.subject;
-    if (body.fields) patch.fields = body.fields;
+    if (body.fields) patch.fields = processFileContentFields(docType, body.fields);
     if (body.docNumber !== undefined) patch.docNumber = body.docNumber;
     if (body.docYear !== undefined) patch.docYear = body.docYear;
     if (body.confidential !== undefined) patch.confidential = body.confidential;
@@ -1546,9 +1617,8 @@ api['GET /api/dashboard'] = async (req, res, ctx, user) => {
       addItem({ key: 'forward_' + d.id, docId: d.id, subject: d.subject, typeName: typesById[d.typeId] ? typesById[d.typeId].name : '-', meta: 'ผอ. เกษียนแล้ว รอส่งต่องาน', urgent: true, createdAt: d.createdAt });
     });
   }
-  // งานที่ได้รับมอบหมาย (ทุกคน)
-  const userDeptIds = user.departmentIds || [];
-  db.tasks.find(t => t.status !== 'done' && (t.assignedToUserId === user.id || (t.assignedToDeptId && (userDeptIds.includes(t.assignedToDeptId) || perm.isDeptHeadOf(user, t.assignedToDeptId))))).forEach(t => {
+  // งานที่ได้รับมอบหมาย (ทุกคน) — งานถึง "แผนก" นับเฉพาะของหัวหน้าแผนกนั้น (ดูเหตุผลที่ canView/inbox)
+  db.tasks.find(t => t.status !== 'done' && (t.assignedToUserId === user.id || (t.assignedToDeptId && perm.isDeptHeadOf(user, t.assignedToDeptId)))).forEach(t => {
     const d = db.documents.get(t.documentId);
     if (!d) return;
     addItem({ key: 'task_' + t.id, docId: d.id, subject: d.subject, typeName: typesById[d.typeId] ? typesById[d.typeId].name : '-', meta: t.status === 'pending' ? 'งานใหม่ รอรับทราบ' : 'รอดำเนินการให้แล้วเสร็จ', urgent: t.status === 'pending', createdAt: t.createdAt });

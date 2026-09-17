@@ -5,6 +5,9 @@ import { api, type DocumentType } from '../../api/client';
 import SignaturePad from '../../components/SignaturePad';
 import AttachmentPicker, { type PendingFile, uploadPendingFiles } from '../../components/AttachmentPicker';
 import TableFieldInput, { type TableRow } from '../../components/TableFieldInput';
+import RichTextEditor from '../../components/RichTextEditor';
+import FileContentPicker, { type FileContentValue } from '../../components/FileContentPicker';
+import { plainTextLength } from '../../utils/richText';
 import MemoSheet from '../../components/MemoSheet';
 import ScaledMemoPreview from '../../components/ScaledMemoPreview';
 import { FileText, Send, ChevronDown, X, Eye } from 'lucide-react';
@@ -71,6 +74,11 @@ export default function DocumentCreate() {
     e.preventDefault();
     if (!typeId || !subject) { setError(t('docMissingTypeOrSubject')); return; }
     if (needsDeptPicker && !targetDeptId) { setError(t('docMissingTargetDept')); return; }
+    // ฟิลด์ richtext เป็น contentEditable ไม่ใช่ input/textarea จริง เบราว์เซอร์จึงเช็ค required ให้อัตโนมัติไม่ได้
+    const missingRich = activeType?.formSchema?.find(f => f.type === 'richtext' && f.required && plainTextLength(fields[f.key]) === 0);
+    if (missingRich) { setError(`กรุณากรอก "${missingRich.label}"`); return; }
+    const missingFile = activeType?.formSchema?.find(f => f.type === 'fileContent' && f.required && !fields[f.key]);
+    if (missingFile) { setError(`กรุณาแนบไฟล์ "${missingFile.label}"`); return; }
     setBusy(true); setError('');
     try {
       const doc = await api.post('/api/documents', { typeId, subject, fields, confidential, dueDate: dueDate || null, signature, targetDeptId: targetDeptId || undefined });
@@ -226,6 +234,17 @@ export default function DocumentCreate() {
                       columns={f.columns || []}
                       value={(fields[f.key] as TableRow[]) || []}
                       onChange={rows => updateField(f.key, rows)}
+                    />
+                  ) : f.type === 'richtext' ? (
+                    <RichTextEditor
+                      value={fields[f.key] || ''}
+                      onChange={html => updateField(f.key, html)}
+                    />
+                  ) : f.type === 'fileContent' ? (
+                    <FileContentPicker
+                      value={fields[f.key] as FileContentValue | undefined}
+                      onChange={v => updateField(f.key, v)}
+                      required={f.required}
                     />
                   ) : (
                     <>

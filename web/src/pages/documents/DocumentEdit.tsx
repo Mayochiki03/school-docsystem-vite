@@ -8,6 +8,9 @@ import { api, type DocumentType, type Attachment } from '../../api/client';
 import SignaturePad from '../../components/SignaturePad';
 import AttachmentPicker, { type PendingFile, uploadPendingFiles } from '../../components/AttachmentPicker';
 import TableFieldInput, { type TableRow } from '../../components/TableFieldInput';
+import RichTextEditor from '../../components/RichTextEditor';
+import FileContentPicker, { type FileContentValue } from '../../components/FileContentPicker';
+import { plainTextLength } from '../../utils/richText';
 import MemoSheet from '../../components/MemoSheet';
 import ScaledMemoPreview from '../../components/ScaledMemoPreview';
 import { FileText, Send, Trash2, X, Eye } from 'lucide-react';
@@ -92,6 +95,10 @@ export default function DocumentEdit() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!id || !subject) return;
+    const missingRich = type?.formSchema?.find(f => f.type === 'richtext' && f.required && plainTextLength(fields[f.key]) === 0);
+    if (missingRich) { setError(`กรุณากรอก "${missingRich.label}"`); return; }
+    const missingFile = type?.formSchema?.find(f => f.type === 'fileContent' && f.required && !fields[f.key]);
+    if (missingFile) { setError(`กรุณาแนบไฟล์ "${missingFile.label}"`); return; }
     setBusy(true); setError('');
     try {
       if (newFiles.length > 0) {
@@ -179,6 +186,17 @@ export default function DocumentEdit() {
                     columns={f.columns || []}
                     value={(fields[f.key] as TableRow[]) || []}
                     onChange={rows => updateField(f.key, rows)}
+                  />
+                ) : f.type === 'richtext' ? (
+                  <RichTextEditor
+                    value={fields[f.key] || ''}
+                    onChange={html => updateField(f.key, html)}
+                  />
+                ) : f.type === 'fileContent' ? (
+                  <FileContentPicker
+                    value={fields[f.key] as FileContentValue | undefined}
+                    onChange={v => updateField(f.key, v)}
+                    required={f.required}
                   />
                 ) : (
                   <>

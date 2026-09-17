@@ -161,6 +161,15 @@ export default function AdminDocumentTypes() {
             <input placeholder="บันทึกข้อความ" value={editing.headerTitle || ''} maxLength={40} onChange={e => setEditing({ ...editing, headerTitle: e.target.value })}
               className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-transparent text-sm" />
           </div>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={!!(editing as any).hideMemoHeader}
+              onChange={e => setEditing({ ...editing, hideMemoHeader: e.target.checked } as any)}
+              className="mt-0.5" />
+            <span>
+              ซ่อนหัวเอกสารมาตรฐาน (ชื่อโรงเรียน / ที่-วันที่ / เรื่อง / เรียน) ตอนพิมพ์
+              <span className="block text-xs text-slate-500">ใช้เมื่อฟิลด์ "ข้อความอิสระ" พิมพ์หัวจดหมายเองครบอยู่แล้ว (เช่น พิมพ์ "ที่ ๐๐/๒๕๖๘" และ "เรื่อง ..." เองในเนื้อหา) จะได้ไม่ขึ้นซ้ำสองที่</span>
+            </span>
+          </label>
           <div className="border border-[var(--color-border)] rounded-lg p-3 space-y-2 bg-slate-50 dark:bg-slate-800/40">
             <label className="text-xs text-slate-500 block">เส้นทางอนุมัติ</label>
             <select value={editing.workflowMode || 'standard'}
@@ -197,6 +206,8 @@ export default function AdminDocumentTypes() {
                     className="px-2 py-1.5 rounded-lg border border-[var(--color-border)] bg-transparent text-sm">
                     <option value="text">ข้อความ</option>
                     <option value="textarea">ข้อความยาว</option>
+                    <option value="richtext">ข้อความอิสระ (พิมพ์แบบ Word — ตัวหนา/ลิสต์/เยื้อง/จัดหน้าได้อิสระ)</option>
+                    <option value="fileContent">แนบไฟล์เอกสาร (Word/PDF — ระบบแปลงเป็น PDF แสดงตัวอย่างในหน้าเว็บให้เอง)</option>
                     <option value="number">ตัวเลข</option>
                     <option value="date">วันที่</option>
                     <option value="time">เวลา</option>
@@ -234,6 +245,20 @@ export default function AdminDocumentTypes() {
                       className="w-32 px-2 py-1.5 rounded-lg border border-[var(--color-border)] bg-transparent text-sm"
                     />
                   </div>
+                )}
+                {f.type === 'richtext' && (
+                  <p className="text-xs text-slate-500">
+                    ผู้กรอกจะเห็นแถบเครื่องมือจัดรูปแบบข้อความ (ตัวหนา ลิสต์ เยื้อง จัดหน้า ฯลฯ) แทนช่องข้อความธรรมดา
+                    เหมาะกับฟิลด์ "เนื้อหา" ของเอกสารที่รูปแบบไม่ตายตัว เช่น คำสั่งโรงเรียน
+                    {f.key === 'content' && ' — เดิมถ้าใช้ key ชื่อ "content" ระบบจะแสดงเป็นเนื้อหาหลักของเอกสาร (ไม่มีป้ายชื่อกำกับ) เหมือนฟิลด์ข้อความยาวแบบเดิมทุกประการ'}
+                  </p>
+                )}
+                {f.type === 'fileContent' && (
+                  <p className="text-xs text-slate-500">
+                    ผู้กรอกจะแนบไฟล์ Word (.doc/.docx/.odt/.rtf) หรือ PDF แทนการพิมพ์เนื้อหาในระบบ — ถ้าแนบ Word มา
+                    ระบบจะแปลงเป็น PDF ให้อัตโนมัติแล้วแสดงตัวอย่างในหน้าเว็บเลย ควรใช้เพียง 1 ฟิลด์ต่อประเภทเอกสาร
+                    และแนะนำให้เปิด "ซ่อนหัวเอกสารมาตรฐาน" ด้านบนคู่กัน เพราะไฟล์ที่แนบมามักมีหัวจดหมายอยู่ในตัวเองแล้ว
+                  </p>
                 )}
                 {f.type === 'table' && (
                   <div className="space-y-1.5">

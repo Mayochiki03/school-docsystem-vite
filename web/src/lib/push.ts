@@ -22,6 +22,8 @@ export async function getPushStatus(): Promise<'unsupported' | 'default' | 'gran
   return sub ? 'subscribed' : 'granted';
 }
 
+const PUSH_ENABLED_KEY = 'snk_push_enabled';
+
 export async function enablePush() {
   if (!isPushSupported()) throw new Error('เบราว์เซอร์นี้ไม่รองรับ Push Notification (ต้องใช้งานผ่าน HTTPS)');
 
@@ -42,6 +44,9 @@ export async function enablePush() {
   await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
   await api.post('/api/push/subscribe', { subscription: sub.toJSON() });
+  // จดจำไว้ว่าผู้ใช้ "ตั้งใจเปิด" การแจ้งเตือนแล้ว — ใช้เป็นสัญญาณให้ syncPushSubscription() พยายาม
+  // subscribe ใหม่ให้อัตโนมัติในอนาคตถ้า subscription หลุดไปเฉยๆ โดยไม่ต้องรอผู้ใช้มากดปุ่มนี้ซ้ำอีก
+  localStorage.setItem(PUSH_ENABLED_KEY, '1');
 }
 
 export async function disablePush() {
@@ -50,5 +55,31 @@ export async function disablePush() {
   if (sub) {
     await api.post('/api/push/unsubscribe', { endpoint: sub.endpoint });
     await sub.unsubscribe();
+  }
+  localStorage.removeItem(PUSH_ENABLED_KEY);
+}
+
+// เดิมถ้า subscription หลุดไปเฉยๆ (เบราว์เซอร์หมุน endpoint ใหม่เองตามรอบ, service worker ถูกอัปเดต/ล้าง,
+// หรือฝั่งเซิร์ฟเวอร์เคยลบสำเนาทิ้งเพราะส่งไม่สำเร็จติดกันหลายครั้ง) แอปจะไม่มีทางรู้เลยจนกว่าผู้ใช้จะสังเกตว่า
+// "ไม่เด้งแจ้งเตือนนานแล้ว" แล้วเข้ามากดปุ่มเปิดใหม่เอง — ฟังก์ชันนี้ไว้เรียกตอนแอปเปิด/กลับมาที่หน้าจอ (foreground)
+// เพื่อตรวจสุขภาพ subscription แล้วซ่อมให้อัตโนมัติแบบเงียบๆ โดยไม่ต้องให้ผู้ใช้ทำอะไรเลย
+export async function syncPushSubscription() {
+  if (!isPushSupported()) return;
+  if (Notification.permission !== 'granted') return;
+  if (localStorage.getItem(PUSH_ENABLED_KEY) !== '1') return; // ไม่เคยกดเปิดไว้ ไม่ต้องยุ่ง
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const { publicKey, configured } = await api.get('/api/push/public-key');
+      if (!configured) return;
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+    }
+    // ส่งซ้ำทุกครั้งที่ sync ได้อย่างปลอดภัย (เซิร์ฟเวอร์ upsert ตาม endpoint อยู่แล้ว ไม่สร้างข้อมูลซ้ำ)
+    // กันกรณีฝั่งเซิร์ฟเวอร์มีสำเนาเก่า/ไม่ตรงกับของจริงที่เบราว์เซอร์ถืออยู่ตอนนี้
+    await api.post('/api/push/subscribe', { subscription: sub.toJSON() });
+  } catch {
+    // ทำเงียบๆ เบื้องหลัง — ถ้าพังจริง ผู้ใช้ยังกดเปิดเองใหม่ได้ตามปกติที่หน้าตั้งค่า ไม่ต้องรบกวนด้วย error
   }
 }

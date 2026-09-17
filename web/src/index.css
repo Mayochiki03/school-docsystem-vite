@@ -52,9 +52,22 @@ select option {
 .a4-topline { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .3rem; flex-wrap: wrap; }
 .a4-row { margin-bottom: .25rem; overflow-wrap: break-word; word-break: break-word; }
 .a4-row b { display: inline-block; min-width: 46px; }
-.a4-content { margin-top: .6rem; margin-bottom: 75mm; text-align: justify; white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; }
-.a4-signblock-right { position: absolute; right: 20mm; bottom: 68mm; width: 45%; text-align: center; overflow-wrap: break-word; word-break: break-word; }
-.a4-signblock-left { position: absolute; left: 20mm; bottom: 18mm; width: 55%; text-align: left; overflow-wrap: break-word; word-break: break-word; }
+.a4-content { margin-top: .6rem; margin-bottom: 1rem; text-align: justify; overflow-wrap: break-word; word-break: break-word; }
+/* เนื้อหาแบบ "ข้อความอิสระ" (richtext) — ทั้งตอนพิมพ์จริง (.a4-content) และตอนแก้ไขในตัวแก้ไข (RichTextEditor) */
+.a4-richtext { text-align: justify; overflow-wrap: break-word; word-break: break-word; }
+.a4-richtext :first-child { margin-top: 0; }
+.a4-richtext :last-child { margin-bottom: 0; }
+.a4-richtext p, .a4-richtext div { margin: 0 0 .5em; }
+.a4-richtext ul, .a4-richtext ol { margin: 0 0 .5em 1.4em; padding: 0; }
+.a4-richtext li { margin-bottom: .15em; }
+.a4-richtext blockquote { margin: 0 0 .5em 1.4em; padding-left: .6em; border-left: 2px solid #ccc; }
+/* ข้อความจาง "เริ่มพิมพ์เนื้อหาที่นี่..." ตอนกล่อง richtext ยังว่างอยู่ ให้ความรู้สึกใกล้เคียงกับ Word/Docs มากขึ้น */
+.richtext-editable:empty::before { content: attr(data-placeholder); color: #9ca3af; pointer-events: none; }
+/* บล็อกลงชื่อ — อยู่ในลำดับเนื้อหาปกติ ไหลต่อจากเนื้อหาเหมือน Word/PDF แทนที่จะเกาะมุมกระดาษตายตัว
+   (ดูคำอธิบายเต็มใน MemoSheet.tsx) ผู้จัดทำ (ขวา) มาก่อน ผู้เกษียนหนังสือ (ซ้าย, ถ้ามี) ตามมาด้านล่าง */
+.a4-signflow { margin-top: 2.5rem; }
+.a4-signblock-right { display: flex; flex-direction: column; align-items: center; margin-left: auto; width: 55%; max-width: 320px; text-align: center; overflow-wrap: break-word; word-break: break-word; }
+.a4-signblock-left { display: flex; flex-direction: column; align-items: flex-start; width: 65%; max-width: 380px; text-align: left; overflow-wrap: break-word; word-break: break-word; margin-top: 1.8rem; }
 .a4-sigline { min-height: 46px; display: flex; align-items: flex-end; justify-content: center; }
 .a4-sigline img { max-height: 42px; }
 .a4-signblock-right .a4-sigline::before, .a4-signblock-left .a4-sigline::before { content: 'ลงชื่อ'; margin-right: .4rem; }
@@ -74,12 +87,16 @@ select option {
   body { background: white !important; }
   .no-print { display: none !important; }
   body > *:not(#printArea) { display: none !important; }
-  #printArea { display: block !important; position: static; width: 210mm; margin: 0 auto; }
-  /* บังคับให้สูงเท่ากับ 1 หน้ากระดาษพอดี (ไม่ใช่แค่ min-height) — ถ้าปล่อยเป็น min-height เฉยๆ
-     พอความสูงจริงที่ render เกิน 297mm ไปเสี้ยวมิลลิเมตร (จากการปัดเศษ font/line-height) เบราว์เซอร์
-     จะดันหน้า 2 ออกมาเปล่าๆ แล้วบล็อกลงชื่อที่เป็น position:absolute; bottom: ... จะไปโผล่ที่หน้า 2
-     แทนหน้า 1 (เพราะ bottom-anchored element จะเกาะกับหน้าสุดท้ายของกล่องเสมอ ไม่ใช่หน้าแรก)
-     ล็อกความสูงตายตัว + overflow:hidden ตัดปัญหานี้ทั้งหมด รับประกันว่าพิมพ์ออกมาหน้าเดียวเสมอ */
-  .a4-page { box-shadow: none; margin: 0; height: 297mm; min-height: 0; overflow: hidden; page-break-after: avoid; page-break-inside: avoid; }
-  @page { size: A4; margin: 0; }
+  #printArea { display: block !important; position: static; width: auto; margin: 0; }
+  /* เดิมล็อกความสูง .a4-page = 297mm + overflow:hidden เพื่อบังคับพิมพ์หน้าเดียวเสมอ แต่ทำให้เอกสารที่เนื้อหา
+     ยาวเกิน 1 หน้าถูก "ตัดทิ้ง" ไปเฉยๆ (เนื้อหาส่วนเกินหายไปจากที่พิมพ์จริง) — เปลี่ยนมาปล่อยให้ไหลขึ้นหน้าถัดไป
+     ได้ตามจริงเหมือน Word/PDF แทน โดยใช้ระยะขอบกระดาษจาก @page (ซึ่งเบราว์เซอร์จะพิมพ์ซ้ำทุกหน้าให้เองอัตโนมัติ)
+     แทนที่จะใช้ padding ของ .a4-page เอง (padding จะมีผลแค่ขอบบนของหน้าแรก/ขอบล่างของหน้าสุดท้ายเท่านั้น) */
+  .a4-page { box-shadow: none; margin: 0; padding: 0; width: auto; min-height: 0; }
+  @page { size: A4; margin: 22mm 20mm 18mm; }
+  /* กันไม่ให้แถวตาราง/บล็อกลงชื่อ/หัวเอกสาร ถูกตัดครึ่งคาบรอยต่อของหน้า */
+  .a4-title, .a4-school, .a4-topline, .a4-row, .a4-table tr, .a4-signblock-right, .a4-signblock-left {
+    page-break-inside: avoid;
+  }
+  .a4-signflow { page-break-inside: avoid; }
 }
