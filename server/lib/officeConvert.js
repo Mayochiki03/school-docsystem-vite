@@ -40,7 +40,7 @@ function convertToPdf(inputPath, outDir) {
       '--convert-to', 'pdf', '--outdir', outDir, inputPath,
     // 180 วินาที (ไม่ใช่ 45 วินาทีแบบเดิม) — ไฟล์รวมหลายร้อยหน้า (เช่น รวมคำสั่งทั้งปีไว้ไฟล์เดียว 200-400 หน้า)
     // ใช้เวลาแปลงนานกว่าเอกสารสั้นๆ มาก ค่าเดิม 45 วินาทีตัดจบเร็วเกินไปสำหรับเคสนี้
-    ], { timeout: 180000, stdio: 'pipe' });
+    ], { timeout: 180000, stdio: 'pipe', windowsHide: true });
   } finally {
     fs.rmSync(profileDir, { recursive: true, force: true });
   }
@@ -52,7 +52,7 @@ function convertToPdf(inputPath, outDir) {
 
 // เช็คว่าเซิร์ฟเวอร์นี้มี LibreOffice ใช้งานได้จริงไหม — เรียกตอนสตาร์ทเซิร์ฟเวอร์เพื่อเตือนแอดมินถ้ายังไม่ได้ติดตั้ง
 function isConversionAvailable() {
-  try { execFileSync(SOFFICE, ['--version'], { timeout: 10000, stdio: 'pipe' }); return true; }
+  try { execFileSync(SOFFICE, ['--version'], { timeout: 10000, stdio: 'pipe', windowsHide: true  }); return true; }
   catch { return false; }
 }
 
