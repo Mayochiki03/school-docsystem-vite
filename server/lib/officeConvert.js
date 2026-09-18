@@ -52,8 +52,20 @@ function convertToPdf(inputPath, outDir) {
 
 // เช็คว่าเซิร์ฟเวอร์นี้มี LibreOffice ใช้งานได้จริงไหม — เรียกตอนสตาร์ทเซิร์ฟเวอร์เพื่อเตือนแอดมินถ้ายังไม่ได้ติดตั้ง
 function isConversionAvailable() {
-  try { execFileSync(SOFFICE, ['--version'], { timeout: 10000, stdio: 'pipe', windowsHide: true  }); return true; }
-  catch (e) { console.error('[DEBUG] LibreOffice check failed:', e.message, e.code); return false; }
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lo-check-'));
+  try {
+    execFileSync(SOFFICE, [
+      '--headless', '--norestore', '--nolockcheck', '--nodefault', '--nologo',
+      `-env:UserInstallation=file:///${profileDir.replace(/\\/g, '/')}`,
+      '--version',
+    ], { timeout: 30000, stdio: 'pipe', windowsHide: true });
+    return true;
+  } catch (e) {
+    console.error('[DEBUG] LibreOffice check failed:', e.message, e.code);
+    return false;
+  } finally {
+    fs.rmSync(profileDir, { recursive: true, force: true });
+  }
 }
 
 // เช็คคร่าวๆ ว่ามีฟอนต์ไทยราชการ (เช่น Sarabun) ติดตั้งอยู่ในเครื่องหรือยัง — ใช้ fc-list ของ fontconfig
