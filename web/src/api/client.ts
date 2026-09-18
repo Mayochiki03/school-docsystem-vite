@@ -8,9 +8,9 @@ const BASE = ''; // ใช้ path สัมพัทธ์ ผ่าน Vite pr
 // fetch จะค้างเงียบๆ ได้เป็นนาที ทำให้แอพดูเหมือน "โหลดไม่ขึ้น")
 const REQUEST_TIMEOUT_MS = 15000;
 
-async function request(method: string, path: string, body?: any): Promise<any> {
+async function request(method: string, path: string, body?: any, timeoutMs = REQUEST_TIMEOUT_MS): Promise<any> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(BASE + path, {
@@ -47,7 +47,7 @@ async function request(method: string, path: string, body?: any): Promise<any> {
 
 export const api = {
   get: (path: string) => request('GET', path),
-  post: (path: string, body?: any) => request('POST', path, body ?? {}),
+  post: (path: string, body?: any, timeoutMs?: number) => request('POST', path, body ?? {}, timeoutMs),
   put: (path: string, body?: any) => request('PUT', path, body ?? {}),
   del: (path: string) => request('DELETE', path)
 };

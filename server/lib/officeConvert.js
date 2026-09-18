@@ -34,9 +34,13 @@ function convertToPdf(inputPath, outDir) {
   try {
     execFileSync(SOFFICE, [
       '--headless', '--norestore', '--nolockcheck', '--nodefault', '--nologo',
+      // file:// ต้องตามด้วย / อีกตัวก่อน path บน Windows (file:///C:/...) ไม่งั้น LibreOffice จะตีความ
+      // "C:" เป็นชื่อ host แทนที่จะเป็นไดรฟ์ แล้วหาโฟลเดอร์โปรไฟล์ไม่เจอ (พังไม่ชัดเจน แก้จากการทดสอบจริงบน Windows)
       `-env:UserInstallation=file:///${profileDir.replace(/\\/g, '/')}`,
       '--convert-to', 'pdf', '--outdir', outDir, inputPath,
-    ], { timeout: 45000, stdio: 'pipe' });
+    // 180 วินาที (ไม่ใช่ 45 วินาทีแบบเดิม) — ไฟล์รวมหลายร้อยหน้า (เช่น รวมคำสั่งทั้งปีไว้ไฟล์เดียว 200-400 หน้า)
+    // ใช้เวลาแปลงนานกว่าเอกสารสั้นๆ มาก ค่าเดิม 45 วินาทีตัดจบเร็วเกินไปสำหรับเคสนี้
+    ], { timeout: 180000, stdio: 'pipe' });
   } finally {
     fs.rmSync(profileDir, { recursive: true, force: true });
   }

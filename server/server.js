@@ -14,6 +14,7 @@ const db = require('./db/sqliteStore');
 const auth = require('./lib/auth');
 const perm = require('./lib/permissions');
 const officeConvert = require('./lib/officeConvert');
+const { scheduleUploadCleanup } = require('./lib/cleanupUploads');
 const { runBackup, scheduleDailyBackup } = require('./scripts/backup');
 require('./db/seed')(); // seed ถ้ายังไม่มีข้อมูล
 
@@ -39,6 +40,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const STATIC_FORMS_DIR = path.join(__dirname, 'static-forms');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+scheduleUploadCleanup(db, UPLOAD_DIR); // ลบไฟล์กำพร้าจากฟิลด์ "แนบไฟล์เอกสาร" ที่ไม่มีการอ้างอิงแล้ว เป็นระยะ
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -95,40 +97,49 @@ function getCurrentUser(req) {
 
 const push = require('./lib/push');
 // ฟิลด์ชนิด "fileContent" — แนบไฟล์ Word/PDF ให้เป็นเนื้อหาหลักของเอกสาร (ใช้กับฟอร์มที่พิมพ์ไม่ตายตัวมากๆ
-// เช่น คำสั่งโรงเรียน แทนที่จะพิมพ์ในระบบทั้งฉบับ) เรียกจากทั้ง 3 จุดที่เอกสารถูกบันทึก fields ได้ (สร้างใหม่/
-// update ระหว่างรอตรวจกรอง/resubmit หลังถูกตีกลับ) เพื่อไม่ให้พลาดจุดใดจุดหนึ่งไป
+// เช่น คำสั่งโรงเรียน แทนที่จะพิมพ์ในระบบทั้งฉบับ)
 const DOCX_LIKE_EXT = new Set(['.doc', '.docx', '.odt', '.rtf']);
+
+// บันทึกไฟล์ที่แนบมา (base64) ลงดิสก์ แล้วแปลงเป็น PDF ถ้าจำเป็น คืนค่า descriptor เดียวกันทุกจุดที่เรียก
+// แยกออกมาเป็นฟังก์ชันกลาง เพราะใช้ทั้งตอนบันทึกเอกสารจริง (processFileContentFields ด้านล่าง) และตอนเตรียม
+// พรีวิวให้เลือกหน้าก่อนแนบจริง (endpoint /api/uploads/convert-preview — ดูเหตุผลในคอมเมนต์ตรงนั้น)
+function saveAndConvertUpload(val) {
+  const safeName = Date.now() + '_' + String(val.fileName || 'file').replace(/[^a-zA-Z0-9ก-๙._-]/g, '_');
+  const filePath = path.join(UPLOAD_DIR, safeName);
+  const base64Data = String(val.base64 || '').replace(/^data:.*;base64,/, '');
+  fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+  const ext = path.extname(safeName).toLowerCase();
+  const descriptor = {
+    fileName: val.fileName || safeName, filePath: '/uploads/' + safeName,
+    uploadedAt: new Date().toISOString(), convertedOk: false, pdfPath: null, convertError: null,
+  };
+  if (ext === '.pdf') {
+    descriptor.pdfPath = descriptor.filePath;
+    descriptor.convertedOk = true;
+  } else if (DOCX_LIKE_EXT.has(ext)) {
+    try {
+      const pdfOut = officeConvert.convertToPdf(filePath, UPLOAD_DIR);
+      descriptor.pdfPath = '/uploads/' + path.basename(pdfOut);
+      descriptor.convertedOk = true;
+    } catch (e) {
+      console.error('[fileContent] แปลง PDF ล้มเหลว:', e.message);
+      descriptor.convertError = 'ไม่สามารถแปลงเป็น PDF เพื่อแสดงตัวอย่างในระบบได้ ผู้เกี่ยวข้องจะต้องดาวน์โหลดไฟล์ต้นฉบับไปเปิดเอง (ถ้าเกิดซ้ำบ่อย แจ้งแอดมินให้ตรวจสอบ LibreOffice บนเซิร์ฟเวอร์)';
+    }
+  } else {
+    descriptor.convertError = 'ไฟล์ชนิดนี้ไม่รองรับ (รองรับเฉพาะ .doc, .docx, .odt, .rtf, .pdf)';
+  }
+  return descriptor;
+}
+
+// เรียกจากทั้ง 3 จุดที่เอกสารถูกบันทึก fields ได้ (สร้างใหม่/update ระหว่างรอตรวจกรอง/resubmit หลังถูกตีกลับ)
+// เพื่อไม่ให้พลาดจุดใดจุดหนึ่งไป
 function processFileContentFields(type, fields) {
   if (!fields || !type || !Array.isArray(type.formSchema)) return fields;
   type.formSchema.forEach(f => {
     if (f.type !== 'fileContent') return;
     const val = fields[f.key];
     if (!val || typeof val !== 'object' || !val.base64) return; // ไม่ใช่ไฟล์ใหม่ (ไม่มี base64) -> ข้าม ของเดิมอยู่แล้ว
-    const safeName = Date.now() + '_' + String(val.fileName || 'file').replace(/[^a-zA-Z0-9ก-๙._-]/g, '_');
-    const filePath = path.join(UPLOAD_DIR, safeName);
-    const base64Data = val.base64.replace(/^data:.*;base64,/, '');
-    fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-    const ext = path.extname(safeName).toLowerCase();
-    const descriptor = {
-      fileName: val.fileName || safeName, filePath: '/uploads/' + safeName,
-      uploadedAt: new Date().toISOString(), convertedOk: false, pdfPath: null, convertError: null,
-    };
-    if (ext === '.pdf') {
-      descriptor.pdfPath = descriptor.filePath;
-      descriptor.convertedOk = true;
-    } else if (DOCX_LIKE_EXT.has(ext)) {
-      try {
-        const pdfOut = officeConvert.convertToPdf(filePath, UPLOAD_DIR);
-        descriptor.pdfPath = '/uploads/' + path.basename(pdfOut);
-        descriptor.convertedOk = true;
-      } catch (e) {
-        console.error('[fileContent] แปลง PDF ล้มเหลว:', e.message);
-        descriptor.convertError = 'ไม่สามารถแปลงเป็น PDF เพื่อแสดงตัวอย่างในระบบได้ ผู้เกี่ยวข้องจะต้องดาวน์โหลดไฟล์ต้นฉบับไปเปิดเอง (ถ้าเกิดซ้ำบ่อย แจ้งแอดมินให้ตรวจสอบ LibreOffice บนเซิร์ฟเวอร์)';
-      }
-    } else {
-      descriptor.convertError = 'ไฟล์ชนิดนี้ไม่รองรับ (รองรับเฉพาะ .doc, .docx, .odt, .rtf, .pdf)';
-    }
-    fields[f.key] = descriptor;
+    fields[f.key] = saveAndConvertUpload(val);
   });
   return fields;
 }
@@ -828,6 +839,25 @@ api['POST /api/documents/:id/actions'] = async (req, res, ctx, user) => {
   }
 
   sendJson(res, 400, { error: 'ไม่รู้จัก action นี้' });
+};
+
+// แปลง/เตรียมไฟล์ให้พรีวิวได้ทันทีตอนเพิ่งเลือกไฟล์ในหน้าสร้าง/แก้ไขเอกสาร (ก่อนกดบันทึกฟอร์มจริง) — ใช้กับฟิลด์
+// "แนบไฟล์เอกสาร" (fileContent) โดยเฉพาะตอนที่ไฟล์ที่แนบเป็นไฟล์รวมหลายร้อยหน้า (เช่น รวมคำสั่งทั้งปีไว้ไฟล์เดียว)
+// แล้วผู้ใช้ต้องเลือกว่าเอกสารนี้ตรงกับหน้าไหนในไฟล์รวมนั้นบ้าง — ตัวเลือกหน้า (PdfPageSelector) ต้องมี URL ของ PDF
+// ให้ pdf.js โหลดพรีวิวได้ก่อน ถึงจะเลือกหน้าได้ จึงต้องแปลง/บันทึกไฟล์ทันทีที่เลือก ไม่ใช่รอจนกดบันทึกฟอร์ม
+// หมายเหตุ: ไฟล์ที่อัปโหลดผ่านทางนี้ยังไม่ผูกกับเอกสารไหนทั้งสิ้น จนกว่าจะถูกอ้างอิงตอนบันทึกฟอร์มจริง (เหมือนไฟล์กำพร้า
+// ชั่วคราวในโฟลเดอร์ uploads — งานทำความสะอาดไฟล์เก่าที่ไม่ถูกใช้อยู่นอกขอบเขตของรอบนี้)
+api['POST /api/uploads/convert-preview'] = async (req, res, ctx, user) => {
+  if (!user) return sendJson(res, 401, {});
+  const body = await readBody(req);
+  if (!body.fileName || !body.base64) return sendJson(res, 400, { error: 'ไม่มีไฟล์แนบมา' });
+  try {
+    const descriptor = saveAndConvertUpload(body);
+    return sendJson(res, 200, descriptor);
+  } catch (e) {
+    console.error('[convert-preview] ล้มเหลว:', e.message);
+    return sendJson(res, 500, { error: 'เตรียมตัวอย่างไฟล์ไม่สำเร็จ' });
+  }
 };
 
 api['POST /api/documents/:id/attachments'] = async (req, res, ctx, user) => {
