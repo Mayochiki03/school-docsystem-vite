@@ -45,6 +45,10 @@ scheduleUploadCleanup(db, UPLOAD_DIR); // ลบไฟล์กำพร้า�
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  // .mjs (ES module JS) ขาดหายไปเดิม ทำให้ fallback ไปเป็น application/octet-stream ที่ไม่ใช่ JS mime type
+  // เบราว์เซอร์บังคับเช็ค MIME type ของ <script type="module"> อย่างเข้มงวดตามสเปก เลยปฏิเสธไม่รันสคริปต์ที่โหลดมา
+  // (เจอจริงตอน pdf.js พยายามโหลด pdf.worker.min.mjs เป็น module worker แล้วพังเงียบๆ ด้วย error MIME type)
+  '.mjs': 'text/javascript; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.ico': 'image/x-icon'
 };

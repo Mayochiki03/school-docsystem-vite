@@ -186,6 +186,41 @@ nssm start SchoolDocSystem
 
 ตั้งค่า path ของ `soffice` เองได้ด้วย env `SOFFICE_PATH` ถ้าติดตั้งไว้ตำแหน่งที่ไม่ใช่ค่าเริ่มต้น
 
+### Troubleshooting: LibreOffice ค้างตอนรันเป็น Windows Service (NSSM)
+
+**อาการ:** ทดสอบบนเครื่อง dev (รัน `node server.js` ตรงๆ จาก terminal) แปลงไฟล์ได้ปกติ แต่พอ deploy ขึ้น
+UAT/production ที่รันผ่าน NSSM เป็น Windows Service แล้ว **ใช้งานไม่ได้เลย** — log ขึ้น
+`spawnSync ... soffice.exe ETIMEDOUT` (ค้างจน timeout ทุกครั้ง)
+
+**สาเหตุ:** LibreOffice มีส่วนที่เป็น GUI toolkit อยู่ข้างใน แม้เรียกด้วย `--headless` ก็ตาม เวลารันภายใต้
+Windows Service (ทำงานใน Session 0 ที่ไม่มี desktop/ผู้ใช้ล็อกอินอยู่) มันจะพยายามเข้าถึง Window Station หรือ
+โฟลเดอร์โปรไฟล์ผู้ใช้ที่ service account (มักเป็น Local System/Network Service) ไม่มีจริงหรือเข้าถึงไม่ได้
+ทำให้ค้างรอไปเรื่อยๆ จนกว่าจะ timeout — เป็นปัญหาที่รู้จักกันดีของแอปตระกูล LibreOffice/OpenOffice เวลารันเป็น
+service ไม่ใช่บั๊กเฉพาะของระบบนี้
+
+**สิ่งที่ลองแล้วในโค้ด (v2.6.2) แต่ถอนออกแล้ว:** เคยลองตั้งค่า `HOME`/`USERPROFILE`/`TEMP`/`TMP` ให้ชี้ไปที่
+โฟลเดอร์ที่ควบคุมเอง แต่กลับทำให้เคสที่เคยใช้ได้ปกติ (รันตรงจาก terminal) พังไปด้วย จึงถอนกลับเป็นวิธีเดิมแล้ว
+(v2.6.3) — **สรุปคือปัญหานี้ต้องแก้ที่การตั้งค่า Windows Service โดยตรง ไม่ใช่แก้ที่โค้ด** โค้ดฝั่งนี้เหมือนกัน
+ทุกเครื่อง (dev/UAT/production) อยู่แล้ว ความต่างของอาการมาจากวิธีที่ Windows รัน service (ไม่มี desktop
+session) ต่างจากตอนรันจาก terminal ปกติ (มี desktop session) ล้วนๆ ลองตามลำดับนี้:
+
+1. **เปิด "Allow service to interact with desktop"** — Services.msc → หา service ของระบบนี้ (ชื่อตามที่ตั้งไว้ตอน
+   สร้างด้วย NSSM) → คลิกขวา Properties → แท็บ Log On → ติ๊ก "Allow service to interact with desktop" → รีสตาร์ท
+   service (ใช้ได้เฉพาะตอน service รันด้วย Local System account)
+2. **หรือเปลี่ยนมารันด้วย user account จริงที่มี desktop profile ปกติ** — แท็บ Log On → เลือก "This account"
+   ใส่ user/password ของ user จริงในเครื่อง (ต้อง login เข้า user นั้นอย่างน้อย 1 ครั้งก่อน เพื่อให้ Windows สร้าง
+   โปรไฟล์ผู้ใช้ให้เรียบร้อยก่อน)
+3. **หรือใช้ Task Scheduler แทน NSSM** — สร้าง Scheduled Task ตั้ง trigger "At startup", action รัน
+   `node server.js`, ติ๊ก "Run whether user is logged on or not" — Task Scheduler มักจัดการเรื่อง session ให้
+   แอปประเภทนี้ได้ดีกว่า raw Windows Service ตรงๆ
+4. ถ้าลองทุกข้อแล้วยังไม่หาย ให้ลองรัน `soffice.exe --headless --convert-to pdf test.docx` ตรงๆ จาก Command
+   Prompt ของ user/account เดียวกับที่ service ใช้ (ไม่ใช่ user ที่ล็อกอินอยู่ปกติ) เพื่อแยกให้ชัดว่าปัญหาอยู่ที่
+   LibreOffice เองหรือที่การตั้งค่า service
+
+หมายเหตุ: ฟีเจอร์ "แนบไฟล์เอกสาร" ออกแบบให้ล้มเหลวอย่างปลอดภัยเสมอ — ถ้าแปลง PDF ไม่สำเร็จ ผู้ใช้ยังกด
+"ใช้ไฟล์นี้ทั้งไฟล์แทน" เพื่อแนบไฟล์ต้นฉบับได้โดยไม่ต้องรอแก้ปัญหา LibreOffice ให้เสร็จก่อน (ผู้เกี่ยวข้องจะ
+ดาวน์โหลดไปเปิดเองแทนการดูตัวอย่างในระบบ)
+
 ---
 
 ## 5. สิ่งที่ทำเสร็จสมบูรณ์แล้ว (ทดสอบผ่านจริง)

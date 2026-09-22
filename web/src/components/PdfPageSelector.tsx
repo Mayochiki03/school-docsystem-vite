@@ -39,11 +39,14 @@ function parsePageRanges(text: string, maxPage: number): Set<number> {
   return result;
 }
 
-export default function PdfPageSelector({ pdfSrc, fileName, onConfirm, onCancel }: {
+export default function PdfPageSelector({ pdfSrc, fileName, onConfirm, onCancel, onUseWholeFileFallback }: {
   pdfSrc: string;
   fileName?: string;
   onConfirm: (result: { fileName: string; base64: string; pageNumbers: number[] }) => void;
   onCancel: () => void;
+  // เผื่อโหลดตัวอย่าง PDF ไม่สำเร็จ (ไฟล์เสีย/แปลงไม่สมบูรณ์/เครือข่ายมีปัญหา ฯลฯ) — ให้ทางออกที่ใช้งานต่อได้
+  // แทนที่จะปล่อยผู้ใช้ติดอยู่หน้า error เฉยๆ โดยไม่มีทางไปต่อ (นอกจากกดยกเลิกแล้วเริ่มใหม่ทั้งหมด)
+  onUseWholeFileFallback?: () => void;
 }) {
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -56,13 +59,29 @@ export default function PdfPageSelector({ pdfSrc, fileName, onConfirm, onCancel 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // เช็ค HTTP response ตรงๆ ก่อนส่งให้ pdf.js แปลง — ช่วยแยกให้ชัดว่าปัญหาอยู่ที่ "โหลดไฟล์ไม่ได้เลย"
+      // (network/routing/permission ผิด) หรือ "โหลดได้แต่ไฟล์เปิดไม่ขึ้น" (ไฟล์เสีย/pdf.js เอง) — ข้อมูลนี้
+      // log ไว้ใน console ให้เช็คได้ง่ายๆ ผ่าน DevTools (F12) โดยไม่ต้องเดา
+      try {
+        const res = await fetch(pdfSrc);
+        console.log('[PdfPageSelector] fetch preview:', res.status, res.headers.get('content-type'), pdfSrc);
+        if (!res.ok) {
+          if (!cancelled) setLoadError(`โหลดไฟล์ไม่สำเร็จ (HTTP ${res.status}) — กด F12 เปิด Console/Network ดูรายละเอียดเพิ่มเติม แล้วแจ้งข้อความที่เจอ`);
+          return;
+        }
+      } catch (fetchErr) {
+        console.error('[PdfPageSelector] fetch failed:', fetchErr);
+        if (!cancelled) setLoadError('เชื่อมต่อเซิร์ฟเวอร์เพื่อโหลดไฟล์ไม่สำเร็จ (เช็ค Console ตอนนี้ - กด F12 - ว่ามี error อะไรเพิ่มเติมไหม)');
+        return;
+      }
       try {
         const doc = await pdfjsLib.getDocument({ url: pdfSrc }).promise;
         if (cancelled) return;
         setPdfDoc(doc);
         setNumPages(doc.numPages);
-      } catch {
-        if (!cancelled) setLoadError('เปิดไฟล์ PDF เพื่อดูตัวอย่างไม่สำเร็จ ลองปิดแล้วเปิดใหม่ หรือแนบไฟล์ใหม่อีกครั้ง');
+      } catch (parseErr) {
+        console.error('[PdfPageSelector] pdf.js load failed:', parseErr);
+        if (!cancelled) setLoadError(`เปิดไฟล์ PDF เพื่อดูตัวอย่างไม่สำเร็จ: ${(parseErr as any)?.message || parseErr} — เช็ค Console (F12) เพิ่มเติมได้`);
       }
     })();
     return () => { cancelled = true; };
@@ -159,7 +178,21 @@ export default function PdfPageSelector({ pdfSrc, fileName, onConfirm, onCancel 
 
         {/* grid */}
         <div className="flex-1 overflow-y-auto p-3">
-          {loadError && <p className="text-sm text-rose-600 text-center py-8">{loadError}</p>}
+          {loadError && (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <p className="text-sm text-rose-600 text-center max-w-md">{loadError}</p>
+              {onUseWholeFileFallback && (
+                <button onClick={onUseWholeFileFallback}
+                  className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-medium">
+                  ใช้ไฟล์นี้ทั้งไฟล์แทน (ข้ามการเลือกหน้า)
+                </button>
+              )}
+              <p className="text-xs text-slate-400 text-center max-w-md">
+                ใช้ทั้งไฟล์ได้ถ้าเอกสารนี้ไม่ใช่ไฟล์รวมหลายฉบับ — ผู้เกี่ยวข้องจะยังดาวน์โหลดไฟล์ไปเปิดเองได้ปกติ
+                แม้พรีวิวในระบบจะใช้ไม่ได้ก็ตาม
+              </p>
+            </div>
+          )}
           {!loadError && !pdfDoc && (
             <div className="flex items-center justify-center h-full text-slate-400 gap-2">
               <Loader2 size={18} className="animate-spin" /> กำลังโหลดตัวอย่าง...

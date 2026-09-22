@@ -40,8 +40,9 @@ export default function FileContentPicker({ value, onChange, required }: {
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
   const [stage, setStage] = useState<Stage>('idle');
-  // ไฟล์ตัวเต็มที่เพิ่งแปลงเสร็จ (ยังไม่ผ่านการตัดหน้า) — เก็บไว้ชั่วคราวระหว่างเปิด popup เลือกหน้าเท่านั้น
-  const [previewFile, setPreviewFile] = useState<{ fileName: string; pdfPath: string } | null>(null);
+  // ไฟล์ตัวเต็มที่เพิ่งแปลงเสร็จ (ยังไม่ผ่านการตัดหน้า) — เก็บ descriptor เต็มไว้ (ไม่ใช่แค่ fileName/pdfPath)
+  // เผื่อ pdf.js โหลดพรีวิวไม่สำเร็จแล้วผู้ใช้เลือก "ใช้ทั้งไฟล้" แทน จะได้มี filePath/convertError ครบไปตั้งค่าได้เลย
+  const [previewFile, setPreviewFile] = useState<FileContentValue | null>(null);
 
   async function handlePick(file: File) {
     setError('');
@@ -63,7 +64,7 @@ export default function FileContentPicker({ value, onChange, required }: {
         setStage('error');
         return;
       }
-      setPreviewFile({ fileName: descriptor.fileName, pdfPath: descriptor.pdfPath });
+      setPreviewFile(descriptor);
       setStage('selecting'); // เปิด popup เลือกหน้าให้อัตโนมัติทันทีที่แปลง/อัปโหลดเสร็จ
     } catch (e: any) {
       setError(e?.message || 'อัปโหลดไฟล์ไม่สำเร็จ');
@@ -129,11 +130,18 @@ export default function FileContentPicker({ value, onChange, required }: {
 
       {required && !value && stage === 'idle' && <p className="text-xs text-slate-400">ฟิลด์นี้จำเป็นต้องแนบไฟล์</p>}
 
-      {stage === 'selecting' && previewFile && (
+      {stage === 'selecting' && previewFile?.pdfPath && (
         <PdfPageSelector
           pdfSrc={previewFile.pdfPath}
           fileName={previewFile.fileName}
           onCancel={() => { setStage(value ? 'ready' : 'idle'); setPreviewFile(null); }}
+          onUseWholeFileFallback={() => {
+            // pdf.js โหลดพรีวิวไม่สำเร็จ — ใช้ descriptor ที่เซิร์ฟเวอร์บันทึก/แปลงไว้แล้วตรงๆ เป็นค่าฟิลด์เลย
+            // (ไฟล์ถูกบันทึกลงเซิร์ฟเวอร์จริงแล้วตั้งแต่ตอนเรียก convert-preview ไม่ต้องอัปโหลดซ้ำ)
+            onChange(previewFile);
+            setStage('ready');
+            setPreviewFile(null);
+          }}
           onConfirm={result => {
             onChange({ fileName: result.fileName, base64: result.base64 });
             setStage('ready');
